@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Ruins Platformer</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 0%, #1d2144 0%, #0b0d18 55%, #05060a 100%);
+      color: #e7ebff;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    .layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; }
+    .panel {
+      background: rgba(10, 14, 27, 0.9);
+      border: 1px solid #30386a;
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    h1 { margin: 0 0 10px; font-size: 1.05rem; }
+    .stat { font-size: .93rem; margin: 6px 0; }
+    .log {
+      margin-top: 10px;
+      min-height: 170px;
+      max-height: 280px;
+      overflow: auto;
+      white-space: pre-wrap;
+      border: 1px solid #333f74;
+      border-radius: 8px;
+      padding: 8px;
+      background: #080b17;
+      font-size: .88rem;
+    }
+    button {
+      margin-top: 10px;
+      border: 1px solid #4256a0;
+      background: #1e2a55;
+      color: #f2f5ff;
+      border-radius: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+    canvas {
+      width: 100%;
+      border: 1px solid #2f3a6e;
+      border-radius: 10px;
+      image-rendering: pixelated;
+      background: #080b18;
+    }
+    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <section class="panel">
+      <h1>NEON RUINS</h1>
+      <div class="stat" id="status"></div>
+      <div class="stat" id="shards"></div>
+      <div class="stat" id="dash"></div>
+      <div class="stat" id="time"></div>
+      <div class="stat">Move: A/D or ←/→</div>
+      <div class="stat">Jump: W/↑/Space</div>
+      <div class="stat">Dash: Shift</div>
+      <button id="restart">Restart run</button>
+      <div class="log" id="log"></div>
+    </section>
+    <section class="panel">
+      <canvas id="game" width="1280" height="720"></canvas>
+    </section>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const keys = new Set();
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const shardsEl = document.getElementById('shards');
+    const dashEl = document.getElementById('dash');
+    const timeEl = document.getElementById('time');
+
+    const G = 1900;
+    const TILE = 48;
+
+    function appendLog(line) {
+      logEl.textContent += (logEl.textContent ? '\n' : '') + line;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function makeLevel() {
+      const solids = [
+        {x:0,y:13,w:80,h:2},
+        {x:8,y:10,w:4,h:1}, {x:15,y:8,w:4,h:1}, {x:22,y:6,w:4,h:1},
+        {x:30,y:9,w:5,h:1}, {x:39,y:11,w:4,h:1}, {x:47,y:7,w:5,h:1},
+        {x:58,y:9,w:4,h:1}, {x:67,y:5,w:6,h:1},
+        {x:20,y:9,w:1,h:4}, {x:46,y:3,w:1,h:4}, {x:64,y:7,w:1,h:5}
+      ];
+
+      const movingPlatforms = [
+        {x:26,y:11,w:3,h:1,ax:26,ay:11,bx:33,by:11,t:0,speed:1.1},
+        {x:53,y:10,w:3,h:1,ax:53,ay:10,bx:53,by:6,t:0,speed:0.9}
+      ];
+
+      const hazards = [
+        {x:12,y:13,w:3,h:2}, {x:35,y:13,w:4,h:2}, {x:62,y:13,w:3,h:2}
+      ];
+
+      const shards = [
+        {x:10.5,y:9.2,collected:false}, {x:17.5,y:7.2,collected:false},
+        {x:24.5,y:5.2,collected:false}, {x:33.5,y:8.2,collected:false},
+        {x:49.5,y:6.2,collected:false}, {x:60.5,y:8.2,collected:false},
+        {x:70.5,y:4.2,collected:false}
+      ];
+
+      const drones = [
+        {x:19.5,y:7.5,min:15,max:23,dir:1,speed:2.2},
+        {x:41.5,y:10.5,min:39,max:43,dir:-1,speed:1.8},
+        {x:69.5,y:4.5,min:67,max:73,dir:1,speed:2.6}
+      ];
+
+      const goal = {x:75.2, y:3.8, w:1.1, h:1.6};
+
+      return {solids, movingPlatforms, hazards, shards, drones, goal, width:80, height:15};
+    }
+
+    function rectsOverlap(a,b){
+      return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+    }
+
+    function makeGame() {
+      const level = makeLevel();
+      let time = 0;
+      let won = false;
+      let dead = false;
+      let deaths = 0;
+      let message = 'Collect all shards, then reach the portal.';
+      let cameraX = 0;
+
+      const player = {
+        x: 2.2, y: 11.2, w: 0.8, h: 0.95,
+        vx: 0, vy: 0,
+        facing: 1,
+        onGround: false,
+        onWall: 0,
+        coyote: 0,
+        jumpBuffer: 0,
+        jumpsLeft: 1,
+        dashTimer: 0,
+        dashCooldown: 0,
+        dashDir: 1,
+        spawnX: 2.2,
+        spawnY: 11.2,
+      };
+
+      const particles = [];
+
+      appendLog('Boot sequence complete. Ruins synced.');
+      appendLog('Movement tech online: wall-jump, dash, double-jump.');
+
+      function resetPlayer() {
+        player.x = player.spawnX;
+        player.y = player.spawnY;
+        player.vx = 0;
+        player.vy = 0;
+        player.dashTimer = 0;
+        player.dashCooldown = 0;
+        player.jumpsLeft = 1;
+        dead = false;
+        message = 'Respawned at checkpoint.';
+      }
+
+      function allSolids() {
+        return [
+          ...level.solids,
+          ...level.movingPlatforms.map(p => ({x:p.x,y:p.y,w:p.w,h:p.h,moving:p}))
+        ];
+      }
+
+      function collideAt(nx, ny) {
+        const box = {x:nx, y:ny, w:player.w, h:player.h};
+        return allSolids().find(s => rectsOverlap(box, s));
+      }
+
+      function spawnBurst(x, y, color, count=12) {
+        for (let i=0;i<count;i++) {
+          const a = Math.random() * Math.PI * 2;
+          const s = 1.5 + Math.random() * 3;
+          particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.4+Math.random()*0.5,color});
+        }
+      }
+
+      function updateMovingPlatforms(dt) {
+        for (const p of level.movingPlatforms) {
+          p.t += dt * p.speed;
+          const blend = (Math.sin(p.t) + 1) / 2;
+          const oldX = p.x;
+          const oldY = p.y;
+          p.x = p.ax + (p.bx - p.ax) * blend;
+          p.y = p.ay + (p.by - p.ay) * blend;
+
+          const atop = player.y + player.h <= oldY + 0.12 && player.y + player.h >= oldY - 0.08;
+          const overlapX = player.x + player.w > oldX && player.x < oldX + p.w;
+          if (player.onGround && atop && overlapX) {
+            player.x += p.x - oldX;
+            player.y += p.y - oldY;
+          }
+        }
+      }
+
+      function update(dt) {
+        if (won || dead) return;
+        time += dt;
+        updateMovingPlatforms(dt);
+
+        // Input helpers
+        const moveLeft = keys.has('a') || keys.has('arrowleft');
+        const moveRight = keys.has('d') || keys.has('arrowright');
+        const jumpPressed = keys.has('jump-press');
+        const dashPressed = keys.has('dash-press');
+
+        if (jumpPressed) player.jumpBuffer = 0.12;
+        if (player.jumpBuffer > 0) player.jumpBuffer -= dt;
+
+        player.coyote = player.onGround ? 0.10 : Math.max(0, player.coyote - dt);
+        player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+
+        const accel = player.onGround ? 2800 : 1700;
+        const maxSpeed = player.onGround ? 8.6 : 7.3;
+        const drag = player.onGround ? 2200 : 520;
+
+        let target = 0;
+        if (moveLeft) target -= maxSpeed;
+        if (moveRight) target += maxSpeed;
+        if (target !== 0) player.facing = Math.sign(target);
+
+        if (target > player.vx) player.vx = Math.min(target, player.vx + accel * dt / 100);
+        if (target < player.vx) player.vx = Math.max(target, player.vx - accel * dt / 100);
+        if (target === 0) {
+          if (player.vx > 0) player.vx = Math.max(0, player.vx - drag * dt / 100);
+          if (player.vx < 0) player.vx = Math.min(0, player.vx + drag * dt / 100);
+        }
+
+        if (player.dashTimer > 0) {
+          player.dashTimer -= dt;
+          player.vy = 0;
+          player.vx = player.dashDir * 16;
+          if (Math.random() < 0.7) spawnBurst(player.x + player.w/2, player.y + player.h/2, '#5bc7ff', 1);
+        } else {
+          player.vy += G * dt / 100;
+          if (player.onWall !== 0 && !player.onGround && player.vy > 2.4) player.vy = 2.4; // wall slide
+        }
+
+        if (dashPressed && player.dashCooldown <= 0) {
+          player.dashTimer = 0.16;
+          player.dashCooldown = 0.7;
+          player.dashDir = moveLeft ? -1 : moveRight ? 1 : player.facing;
+          spawnBurst(player.x + player.w/2, player.y + player.h/2, '#5bc7ff', 16);
+          message = 'Dash engaged.';
+        }
+
+        if (player.jumpBuffer > 0) {
+          if (player.coyote > 0) {
+            player.vy = -11.5;
+            player.onGround = false;
+            player.coyote = 0;
+            player.jumpBuffer = 0;
+            player.jumpsLeft = 1;
+            spawnBurst(player.x + player.w/2, player.y + player.h, '#b5f4ff', 8);
+          } else if (player.onWall !== 0) {
+            player.vy = -10.4;
+            player.vx = -player.onWall * 8.2;
+            player.jumpBuffer = 0;
+            spawnBurst(player.x + player.w/2, player.y + player.h/2, '#b5f4ff', 10);
+            message = 'Wall jump!';
+          } else if (player.jumpsLeft > 0) {
+            player.vy = -10.2;
+            player.jumpsLeft -= 1;
+            player.jumpBuffer = 0;
+            spawnBurst(player.x + player.w/2, player.y + player.h/2, '#ffd06b', 12);
+            message = 'Double jump.';
+          }
+        }
+
+        // Horizontal move/collision
+        player.x += player.vx * dt;
+        let hit = collideAt(player.x, player.y);
+        if (hit) {
+          if (player.vx > 0) player.x = hit.x - player.w;
+          if (player.vx < 0) player.x = hit.x + hit.w;
+          player.vx = 0;
+        }
+
+        // Vertical move/collision
+        player.onGround = false;
+        player.onWall = 0;
+
+        player.y += player.vy * dt;
+        hit = collideAt(player.x, player.y);
+        if (hit) {
+          if (player.vy > 0) {
+            player.y = hit.y - player.h;
+            player.vy = 0;
+            player.onGround = true;
+          } else {
+            player.y = hit.y + hit.h;
+            player.vy = 0;
+          }
+        }
+
+        // wall detect
+        if (!player.onGround) {
+          if (collideAt(player.x - 0.03, player.y)) player.onWall = -1;
+          if (collideAt(player.x + 0.03, player.y)) player.onWall = 1;
+        }
+
+        // collectibles
+        for (const s of level.shards) {
+          if (s.collected) continue;
+          if (rectsOverlap(player, {x:s.x-0.25,y:s.y-0.25,w:0.5,h:0.5})) {
+            s.collected = true;
+            spawnBurst(s.x, s.y, '#77ffe3', 16);
+            appendLog('Shard recovered (' + level.shards.filter(x=>x.collected).length + '/' + level.shards.length + ').');
+            message = 'Neon shard secured.';
+          }
+        }
+
+        // enemies
+        for (const d of level.drones) {
+          d.x += d.dir * d.speed * dt;
+          if (d.x < d.min || d.x > d.max) d.dir *= -1;
+          if (rectsOverlap(player, {x:d.x-0.35,y:d.y-0.28,w:0.7,h:0.56})) {
+            dead = true;
+            deaths += 1;
+            appendLog('Eliminated by patrol drone.');
+            message = 'You were tagged by a drone.';
+          }
+        }
+
+        // hazards
+        for (const h of level.hazards) {
+          if (rectsOverlap(player, h)) {
+            dead = true;
+            deaths += 1;
+            appendLog('Fell into a void trench.');
+            message = 'You fell.';
+          }
+        }
+
+        if (player.y > level.height + 2) {
+          dead = true;
+          deaths += 1;
+          appendLog('Lost in abyss.');
+          message = 'You were swallowed by the ruins.';
+        }
+
+        const collected = level.shards.filter(s=>s.collected).length;
+        if (rectsOverlap(player, level.goal)) {
+          if (collected === level.shards.length) {
+            won = true;
+            appendLog('Portal stabilized. Run complete.');
+            message = 'Stage cleared!';
+          } else {
+            message = 'Portal locked. Need all shards.';
+          }
+        }
+
+        // particles
+        for (const p of particles) {
+          p.life -= dt;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vy += 14 * dt;
+        }
+        while (particles.length && particles[0].life <= 0) particles.shift();
+
+        cameraX = Math.max(0, Math.min(level.width - canvas.width / TILE, player.x - 8));
+
+        // death handling
+        if (dead) {
+          setTimeout(() => {
+            if (dead && !won) resetPlayer();
+          }, 450);
+        }
+
+        keys.delete('jump-press');
+        keys.delete('dash-press');
+
+        statusEl.textContent = won ? 'Status: Cleared' : 'Status: Running';
+        shardsEl.textContent = `Shards: ${collected}/${level.shards.length} | Deaths: ${deaths}`;
+        dashEl.textContent = `Dash: ${player.dashCooldown <= 0 ? 'ready' : player.dashCooldown.toFixed(2) + 's'} | ${message}`;
+        timeEl.textContent = `Time: ${time.toFixed(1)}s`;
+      }
+
+      function drawParallax() {
+        const bands = [
+          {speed:0.08,color:'#121a36',h:140},
+          {speed:0.15,color:'#162248',h:100},
+          {speed:0.25,color:'#1e2d59',h:70}
+        ];
+        bands.forEach((b, i) => {
+          const y = canvas.height - 220 + i * 52;
+          for (let x = -1; x < 20; x++) {
+            const px = (x * 180 - cameraX * TILE * b.speed) % (180 * 20);
+            ctx.fillStyle = b.color;
+            ctx.beginPath();
+            ctx.moveTo(px, y + b.h);
+            ctx.lineTo(px + 70, y);
+            ctx.lineTo(px + 170, y + b.h);
+            ctx.closePath();
+            ctx.fill();
+          }
+        });
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const scale = TILE;
+
+        // background stars
+        ctx.fillStyle = '#080b18';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < 100; i++) {
+          const x = (i * 137 % canvas.width + cameraX * 3) % canvas.width;
+          const y = (i * 91 % canvas.height);
+          ctx.fillStyle = i % 9 === 0 ? '#9dc2ff' : '#3e4a77';
+          ctx.fillRect(x, y, 2, 2);
+        }
+        drawParallax();
+
+        function drawRectTile(r, color) {
+          ctx.fillStyle = color;
+          ctx.fillRect((r.x - cameraX) * scale, r.y * scale, r.w * scale, r.h * scale);
+        }
+
+        level.solids.forEach(s => drawRectTile(s, '#2d3a72'));
+        level.movingPlatforms.forEach(s => drawRectTile(s, '#4a5cac'));
+        level.hazards.forEach(h => drawRectTile(h, '#6d2038'));
+
+        // goal portal animation
+        const pulse = 0.5 + Math.sin(performance.now() * 0.005) * 0.35;
+        ctx.fillStyle = `rgba(170,120,255,${0.45 + pulse * 0.4})`;
+        ctx.fillRect((level.goal.x - cameraX) * scale, level.goal.y * scale, level.goal.w * scale, level.goal.h * scale);
+
+        // shards animation
+        for (const s of level.shards) {
+          if (s.collected) continue;
+          const bob = Math.sin(performance.now() * 0.005 + s.x * 3) * 0.1;
+          const x = (s.x - cameraX) * scale;
+          const y = (s.y + bob) * scale;
+          ctx.fillStyle = '#65f7df';
+          ctx.beginPath();
+          ctx.moveTo(x, y - 8);
+          ctx.lineTo(x + 7, y);
+          ctx.lineTo(x, y + 8);
+          ctx.lineTo(x - 7, y);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // drones
+        for (const d of level.drones) {
+          const x = (d.x - cameraX) * scale;
+          const y = d.y * scale;
+          ctx.fillStyle = '#ff7e7e';
+          ctx.fillRect(x - 12, y - 8, 24, 16);
+          ctx.fillStyle = '#ffd0d0';
+          ctx.fillRect(x - 6, y - 2, 12, 4);
+        }
+
+        // player animation
+        const speed = Math.abs(player.vx);
+        const runCycle = Math.sin(performance.now() * 0.018 * (1 + speed * 0.2));
+        const px = (player.x - cameraX) * scale;
+        const py = player.y * scale;
+
+        const bodyW = player.w * scale;
+        const bodyH = player.h * scale;
+        const tilt = player.onGround ? runCycle * 1.5 : player.vy * 0.06;
+
+        ctx.save();
+        ctx.translate(px + bodyW / 2, py + bodyH / 2);
+        ctx.rotate(tilt * 0.05);
+
+        // dash after-image glow
+        if (player.dashTimer > 0) {
+          ctx.fillStyle = 'rgba(120,215,255,0.35)';
+          ctx.fillRect(-bodyW * 0.9, -bodyH / 2, bodyW, bodyH);
+        }
+
+        // body
+        ctx.fillStyle = '#e9f2ff';
+        ctx.fillRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
+
+        // legs animated
+        ctx.fillStyle = '#7da5ff';
+        const legSwing = player.onGround ? runCycle * 5 : 0;
+        ctx.fillRect(-bodyW / 3, bodyH / 2 - 4, 6, 10 + legSwing);
+        ctx.fillRect(bodyW / 6, bodyH / 2 - 4, 6, 10 - legSwing);
+
+        // visor
+        ctx.fillStyle = '#5dd8ff';
+        ctx.fillRect(player.facing > 0 ? 2 : -14, -8, 12, 7);
+
+        ctx.restore();
+
+        // particles
+        for (const p of particles) {
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = Math.max(0, p.life * 1.2);
+          ctx.fillRect((p.x - cameraX) * scale, p.y * scale, 4, 4);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      return { update, draw, resetPlayer };
+    }
+
+    let game = makeGame();
+    let last = performance.now();
+
+    function frame(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+      game.update(dt);
+      game.draw();
+      requestAnimationFrame(frame);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if (k === ' ' || k === 'w' || k === 'arrowup') keys.add('jump-press');
+      if (k === 'shift') keys.add('dash-press');
+      keys.add(k);
+      if ([' ', 'arrowup', 'arrowleft', 'arrowright', 'arrowdown'].includes(k)) e.preventDefault();
+    });
+    document.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+    document.getElementById('restart').onclick = () => {
+      logEl.textContent = '';
+      keys.clear();
+      game = makeGame();
+    };
+
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
