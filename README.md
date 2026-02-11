@@ -124,3 +124,16 @@ Quick start from repo root:
 python -m http.server 8000
 ```
 Then visit `http://localhost:8000/web/`.
+
+
+### Controls
+- Move: `WASD` or arrow keys
+- Interact / collect: `E`
+- Sprint (higher noise): hold `Shift`
+
+### What is now playable
+- Real-time movement on a top-down tile map.
+- Fog-of-war style visibility around the player.
+- A stalking mimic that reacts to your noise and can kill you.
+- Collectible objectives (wet samples + fuse key), then elevator extraction.
+- Lore pickups that reveal the building's "census" backstory.
