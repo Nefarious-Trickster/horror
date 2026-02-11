@@ -96,3 +96,20 @@ This layers anticipation, self-recognition, and delayed threat in one beat.
 ## Why this concept stands out
 Most horror games ask, “Can you survive the monster?”
 This asks, “What happens when the game learns what *you* do when you’re afraid—and uses that against you?”
+
+## Programming started: terminal prototype
+A first playable prototype is now in `src/echo_census.py`. It includes:
+- Room navigation on a small floor graph.
+- Adaptive Echo learning for movement and hiding habits.
+- Dynamic haunt lines influenced by repeated behavior.
+- Objective flow for inspection gameplay.
+
+### Run
+```bash
+python -m src.echo_census
+```
+
+### Test
+```bash
+pytest -q
+```
