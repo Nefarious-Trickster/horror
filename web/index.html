@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Echo Census: Night Shift (3D Horror Prototype)</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background: #020306;
+      color: #e9edf3;
+      overflow: hidden;
+    }
+    #game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+    .ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: 1fr auto;
+    }
+    .panel {
+      margin: 12px;
+      padding: 10px 12px;
+      border: 1px solid #344055;
+      border-radius: 10px;
+      background: rgba(8, 12, 20, 0.72);
+      align-self: start;
+      max-width: 320px;
+      backdrop-filter: blur(2px);
+    }
+    .line { font-size: .9rem; margin: 4px 0; }
+    .help {
+      position: fixed;
+      right: 12px;
+      top: 12px;
+      border: 1px solid #344055;
+      border-radius: 10px;
+      background: rgba(8,12,20,.72);
+      padding: 10px 12px;
+      font-size: .86rem;
+      max-width: 330px;
+    }
+    .center {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-size: 1.05rem;
+      text-shadow: 0 2px 12px #000;
+      pointer-events: none;
+    }
+    .crosshair {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      margin-top: -5px;
+      border: 1px solid rgba(220,230,255,.45);
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(180,210,255,.35);
+      pointer-events: none;
+    }
+    #startScreen {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 50% 20%, rgba(30,35,50,.45), rgba(1,2,5,.95));
+      z-index: 20;
+    }
+    .start-card {
+      width: min(760px, 92vw);
+      background: rgba(8, 12, 20, .85);
+      border: 1px solid #3c4960;
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    }
+    .start-card h1 { margin: 0 0 10px; }
+    .start-card p { margin: 8px 0; color: #cfd8e7; }
+    .start-card button {
+      margin-top: 10px;
+      pointer-events: auto;
+      border: 1px solid #506489;
+      background: #1b2942;
+      color: #f2f6ff;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font-size: .95rem;
+      cursor: pointer;
+    }
+    #jumpscare {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      z-index: 30;
+      background: rgba(0,0,0,.65);
+      pointer-events: none;
+    }
+    .face {
+      width: min(70vmin, 620px);
+      aspect-ratio: 1/1;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 45% 35%, #f4f4f4 0 4%, #5a0000 5% 7%, transparent 8%),
+        radial-gradient(circle at 58% 35%, #f4f4f4 0 4%, #5a0000 5% 7%, transparent 8%),
+        radial-gradient(circle at 50% 57%, #250000 0 10%, transparent 11%),
+        radial-gradient(circle at 50% 50%, #a11111 0%, #3e0202 56%, #000 78%);
+      filter: contrast(1.4) saturate(1.3);
+      box-shadow: 0 0 180px rgba(200,18,18,.8);
+      animation: shake .06s infinite alternate;
+    }
+    @keyframes shake { from { transform: translate(-4px, -2px) scale(1.02); } to { transform: translate(4px, 2px) scale(1); } }
+    #blood {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(120,8,16,.28) 90%);
+      opacity: 0;
+      transition: opacity .18s;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="blood"></div>
+
+  <div class="ui">
+    <section class="panel">
+      <div class="line"><strong>ECHO CENSUS — NIGHT SHIFT</strong></div>
+      <div class="line" id="objective"></div>
+      <div class="line" id="sanity"></div>
+      <div class="line" id="notes"></div>
+      <div class="line" id="threat"></div>
+    </section>
+    <div></div>
+  </div>
+
+  <div class="help">
+    <div><strong>Controls</strong></div>
+    <div>WASD: move</div>
+    <div>Mouse: look</div>
+    <div>E: interact</div>
+    <div>Shift: sprint (louder)</div>
+    <div>Goal: collect 3 ritual records + reach elevator</div>
+  </div>
+
+  <div class="center" id="msg"></div>
+  <div class="crosshair"></div>
+
+  <section id="startScreen">
+    <div class="start-card">
+      <h1>The Echo Census: Night Shift</h1>
+      <p>You are the only auditor sent into Block 13. Find the three ritual records and reach the elevator.</p>
+      <p>The building learns your routes. If you repeat yourself, it sends your echo ahead of you.</p>
+      <button id="startBtn">Start shift (click to lock mouse)</button>
+    </div>
+  </section>
+
+  <section id="jumpscare"><div class="face"></div></section>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const keys = new Set();
+
+    const objectiveEl = document.getElementById('objective');
+    const sanityEl = document.getElementById('sanity');
+    const notesEl = document.getElementById('notes');
+    const threatEl = document.getElementById('threat');
+    const msgEl = document.getElementById('msg');
+    const startScreen = document.getElementById('startScreen');
+    const jumpscareEl = document.getElementById('jumpscare');
+    const bloodEl = document.getElementById('blood');
+
+    const MAP = [
+      '############################',
+      '#S....#.....#....N.....#..#',
+      '#.###.#.###.#.#######..#..#',
+      '#...#.#...#.#.#.....#..#..#',
+      '#.#.#.###.#.#.#.###.#..#..#',
+      '#.#...#...#.#.#.#...#..#..#',
+      '#.#####.###.#.#.#.###..#..#',
+      '#.....#...#.#.#.#...#..#..#',
+      '###.#.###.#.#.#.###.#..#..#',
+      '#...#...#.#...#...#.#..#..#',
+      '#.#####.#.#######.#.#..#..#',
+      '#.....#.#...R.....#.#..#E.#',
+      '#.###.#.###.#####.#.#..#..#',
+      '#...#...N.#.....#...#..#..#',
+      '#.#.#####.#####.#####..#..#',
+      '#.#.....#.....#.....#..#..#',
+      '#.#####.#####.#####.#..#..#',
+      '#...R...#...#...N...#..#..#',
+      '############################'
+    ];
+
+    const TILE = 1;
+    const FOV = Math.PI / 3;
+    const RAY_COUNT = 280;
+    const MAX_DIST = 22;
+
+    let running = false;
+    let last = performance.now();
+    let message = 'Find all ritual records.';
+    let messageTimer = 0;
+
+    const game = {
+      x: 1.5,
+      y: 1.5,
+      a: 0,
+      sanity: 100,
+      footsteps: 0,
+      notesRead: 0,
+      records: 0,
+      won: false,
+      dead: false,
+      scareCooldown: 1,
+      scareFlags: new Set(),
+      patrolSeed: 0,
+      threat: 0,
+      noteTexts: [
+        'Record A: "Inspector 41 replaced by pre-computed behavior shell."',
+        'Record B: "Elevator accepts human voiceprint after profile extraction."',
+        'Record C: "Echo deployment complete. Original source optional."'
+      ],
+      foundNotes: [],
+      repeatingRouteCounter: 0,
+      lastCell: null,
+      spawn: {x: 1.5, y: 1.5}
+    };
+
+    const records = [];
+    const notes = [];
+    let elevator = {x: 24.5, y: 11.5};
+
+    function mapCell(x, y) {
+      const gx = Math.floor(x);
+      const gy = Math.floor(y);
+      if (gy < 0 || gy >= MAP.length || gx < 0 || gx >= MAP[0].length) return '#';
+      return MAP[gy][gx];
+    }
+
+    function isWall(x, y) { return mapCell(x, y) === '#'; }
+
+    function setupPoints() {
+      for (let y = 0; y < MAP.length; y++) {
+        for (let x = 0; x < MAP[0].length; x++) {
+          const c = MAP[y][x];
+          if (c === 'S') { game.x = x + .5; game.y = y + .5; game.spawn = {x: game.x, y: game.y}; }
+          if (c === 'R') records.push({x: x + .5, y: y + .5, got: false});
+          if (c === 'N') notes.push({x: x + .5, y: y + .5, got: false, text: game.noteTexts[notes.length % game.noteTexts.length]});
+          if (c === 'E') elevator = {x: x + .5, y: y + .5};
+        }
+      }
+    }
+
+    setupPoints();
+
+    function castRay(angle) {
+      const sin = Math.sin(angle);
+      const cos = Math.cos(angle);
+      for (let d = 0; d < MAX_DIST; d += 0.03) {
+        const x = game.x + cos * d;
+        const y = game.y + sin * d;
+        if (isWall(x, y)) return { d, x, y };
+      }
+      return { d: MAX_DIST, x: game.x + cos * MAX_DIST, y: game.y + sin * MAX_DIST };
+    }
+
+    function drawWorld() {
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const flicker = 0.93 + Math.sin(performance.now() * 0.022) * 0.05;
+      // ceiling
+      ctx.fillStyle = `rgb(${Math.floor(12*flicker)},${Math.floor(14*flicker)},${Math.floor(20*flicker)})`;
+      ctx.fillRect(0, 0, w, h/2);
+      // floor
+      ctx.fillStyle = `rgb(${Math.floor(10*flicker)},${Math.floor(8*flicker)},${Math.floor(8*flicker)})`;
+      ctx.fillRect(0, h/2, w, h/2);
+
+      for (let i = 0; i < RAY_COUNT; i++) {
+        const t = i / RAY_COUNT;
+        const rayAngle = game.a - FOV/2 + t * FOV;
+        const hit = castRay(rayAngle);
+        const corrected = hit.d * Math.cos(rayAngle - game.a);
+        const wallH = Math.min(h, (h / Math.max(0.0001, corrected)) * 0.8);
+        const shade = Math.max(0, 220 - corrected * 18);
+        const x = i * (w / RAY_COUNT);
+        const y = h / 2 - wallH / 2;
+
+        ctx.fillStyle = `rgb(${shade*.5},${shade*.58},${shade*.72})`;
+        ctx.fillRect(x, y, Math.ceil(w / RAY_COUNT) + 1, wallH);
+      }
+
+      // draw collectible sprites in pseudo-3d
+      drawSpriteSet(records.filter(r => !r.got), '#60ffd8', 0.22);
+      drawSpriteSet(notes.filter(n => !n.got), '#9db8ff', 0.18);
+      if (!game.won) drawSpriteSet([elevator], game.records >= 3 ? '#d485ff' : '#666284', 0.28);
+
+      // scare apparition
+      if (game.threat > 0.35 && !game.dead && !game.won) {
+        const offset = Math.sin(performance.now() * 0.004) * 0.35;
+        const gx = game.x + Math.cos(game.a + offset) * (1.8 + Math.sin(performance.now() * 0.001)*.5);
+        const gy = game.y + Math.sin(game.a + offset) * (1.8 + Math.cos(performance.now() * 0.0012)*.5);
+        drawSpriteSet([{x:gx,y:gy}], 'rgba(255,40,52,.82)', 0.42);
+      }
+
+      // vignette
+      const grad = ctx.createRadialGradient(w/2,h/2,120,w/2,h/2,Math.max(w,h)/1.2);
+      grad.addColorStop(0,'rgba(0,0,0,0)');
+      grad.addColorStop(1,`rgba(0,0,0,${0.72 + (100-game.sanity)/220})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,w,h);
+    }
+
+    function drawSpriteSet(items, color, scale) {
+      const w = canvas.width;
+      const h = canvas.height;
+      for (const s of items) {
+        const dx = s.x - game.x;
+        const dy = s.y - game.y;
+        const dist = Math.hypot(dx, dy);
+        const ang = Math.atan2(dy, dx) - game.a;
+        let norm = ang;
+        while (norm > Math.PI) norm -= Math.PI*2;
+        while (norm < -Math.PI) norm += Math.PI*2;
+        if (Math.abs(norm) > FOV/1.8) continue;
+        const size = (h / Math.max(0.3, dist)) * scale;
+        const sx = (norm / (FOV/2)) * (w/2) + w/2 - size/2;
+        const sy = h/2 - size/2;
+        const wall = castRay(game.a + norm);
+        if (wall.d < dist) continue;
+        ctx.fillStyle = color;
+        ctx.fillRect(sx, sy, size, size);
+      }
+    }
+
+    function canMove(nx, ny) {
+      const pad = 0.16;
+      return !isWall(nx-pad, ny-pad) && !isWall(nx+pad, ny-pad) && !isWall(nx-pad, ny+pad) && !isWall(nx+pad, ny+pad);
+    }
+
+    function tryInteract() {
+      if (game.dead || game.won) return;
+      let best = null;
+      for (const r of records.filter(r => !r.got)) {
+        const d = Math.hypot(r.x-game.x, r.y-game.y);
+        if (d < 1.2 && (!best || d < best.d)) best = {type:'record', ref:r, d};
+      }
+      for (const n of notes.filter(n => !n.got)) {
+        const d = Math.hypot(n.x-game.x, n.y-game.y);
+        if (d < 1.2 && (!best || d < best.d)) best = {type:'note', ref:n, d};
+      }
+
+      const eDist = Math.hypot(elevator.x-game.x, elevator.y-game.y);
+      if (eDist < 1.4 && (!best || eDist < best.d)) best = {type:'elevator', d:eDist};
+
+      if (!best) {
+        setMessage('Nothing useful here.', 1.1);
+        return;
+      }
+
+      if (best.type === 'record') {
+        best.ref.got = true;
+        game.records += 1;
+        setMessage('Ritual record secured.', 1.4);
+        triggerScare('record-' + game.records, 350);
+        return;
+      }
+      if (best.type === 'note') {
+        best.ref.got = true;
+        game.notesRead += 1;
+        game.foundNotes.push(best.ref.text);
+        setMessage(best.ref.text, 3.4);
+        return;
+      }
+      if (best.type === 'elevator') {
+        if (game.records >= 3) {
+          game.won = true;
+          setMessage('Elevator doors close. You escaped... maybe.', 9);
+        } else {
+          setMessage(`Elevator locked: ${3 - game.records} ritual records missing.`, 1.8);
+          triggerScare('elevator-denied', 450);
+        }
+      }
+    }
+
+    function triggerScare(tag, dur = 420) {
+      if (game.scareCooldown > 0 && game.scareFlags.has(tag)) return;
+      game.scareFlags.add(tag);
+      jumpscareEl.style.display = 'grid';
+      bloodEl.style.opacity = '1';
+      game.sanity = Math.max(0, game.sanity - 14);
+      game.scareCooldown = 1.7;
+      setTimeout(() => {
+        jumpscareEl.style.display = 'none';
+        bloodEl.style.opacity = '0';
+      }, dur);
+    }
+
+    function setMessage(text, sec = 1.5) {
+      message = text;
+      messageTimer = sec;
+    }
+
+    function update(dt) {
+      if (!running || game.dead || game.won) return;
+
+      game.scareCooldown = Math.max(0, game.scareCooldown - dt);
+      messageTimer = Math.max(0, messageTimer - dt);
+
+      const moveSpeed = (keys.has('shift') ? 2.6 : 1.9) * dt;
+      const rotSpeed = 1.7 * dt;
+
+      if (keys.has('arrowleft')) game.a -= rotSpeed;
+      if (keys.has('arrowright')) game.a += rotSpeed;
+
+      let mx = 0, my = 0;
+      if (keys.has('w')) { mx += Math.cos(game.a) * moveSpeed; my += Math.sin(game.a) * moveSpeed; game.footsteps += 1.6*dt; }
+      if (keys.has('s')) { mx -= Math.cos(game.a) * moveSpeed; my -= Math.sin(game.a) * moveSpeed; game.footsteps += 1.2*dt; }
+      if (keys.has('a')) { mx += Math.cos(game.a - Math.PI/2) * moveSpeed; my += Math.sin(game.a - Math.PI/2) * moveSpeed; game.footsteps += 1.2*dt; }
+      if (keys.has('d')) { mx += Math.cos(game.a + Math.PI/2) * moveSpeed; my += Math.sin(game.a + Math.PI/2) * moveSpeed; game.footsteps += 1.2*dt; }
+
+      const nx = game.x + mx;
+      const ny = game.y + my;
+      if (canMove(nx, game.y)) game.x = nx;
+      if (canMove(game.x, ny)) game.y = ny;
+
+      const cell = `${Math.floor(game.x)},${Math.floor(game.y)}`;
+      if (game.lastCell === cell) game.repeatingRouteCounter += dt;
+      else game.repeatingRouteCounter = Math.max(0, game.repeatingRouteCounter - dt*1.7);
+      game.lastCell = cell;
+
+      // threat model
+      game.threat = Math.min(1, Math.max(0, game.threat + (keys.has('shift') ? .32 : .12) * dt + game.repeatingRouteCounter*0.02 - 0.08*dt));
+      if (game.footsteps > 14) {
+        game.footsteps = 0;
+        if (Math.random() < game.threat * 0.28) triggerScare('footstep-' + Math.floor(performance.now()/1000), 260 + Math.random()*260);
+      }
+
+      // scripted zone scares
+      if (game.x > 12 && game.y > 10 && !game.scareFlags.has('zone-laundry')) triggerScare('zone-laundry', 520);
+      if (game.x > 20 && game.y < 6 && !game.scareFlags.has('zone-stair')) triggerScare('zone-stair', 470);
+
+      // sanity drain and death
+      game.sanity = Math.max(0, game.sanity - game.threat * 1.8 * dt);
+      if (game.sanity <= 0 && !game.dead) {
+        game.dead = true;
+        jumpscareEl.style.display = 'grid';
+        setMessage('Your Echo finalized the report in your name.', 999);
+      }
+    }
+
+    function renderUI() {
+      objectiveEl.textContent = `Objective: records ${game.records}/3${game.won ? ' • extraction complete' : ''}`;
+      sanityEl.textContent = `Sanity: ${Math.floor(game.sanity)}%`;
+      notesEl.textContent = `Notes recovered: ${game.notesRead}/${notes.length}`;
+      threatEl.textContent = `Threat: ${Math.floor(game.threat * 100)}%`;
+      msgEl.textContent = messageTimer > 0 || game.dead || game.won ? message : '';
+    }
+
+    function loop(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+      update(dt);
+      drawWorld();
+      renderUI();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'e') tryInteract();
+      keys.add(k);
+      if (['arrowleft','arrowright','arrowup','arrowdown',' '].includes(k)) e.preventDefault();
+    });
+    document.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement === canvas && running && !game.dead && !game.won) {
+        game.a += e.movementX * 0.0025;
+      }
+    });
+
+    document.getElementById('startBtn').onclick = async () => {
+      running = true;
+      startScreen.style.display = 'none';
+      canvas.requestPointerLock();
+      setMessage('Proceed to checkpoint. Avoid predictable routes.', 2.4);
+    };
+
+    canvas.addEventListener('click', () => {
+      if (running && document.pointerLockElement !== canvas && !game.won && !game.dead) canvas.requestPointerLock();
+    });
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
