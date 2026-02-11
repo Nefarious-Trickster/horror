@@ -113,3 +113,14 @@ python -m src.echo_census
 ```bash
 pytest -q
 ```
+
+
+## Play in your browser (HTML)
+If you want an HTML version, open:
+- `web/index.html`
+
+Quick start from repo root:
+```bash
+python -m http.server 8000
+```
+Then visit `http://localhost:8000/web/`.
