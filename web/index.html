@@ -2,640 +2,507 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lattice Paradox</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Echo Census: Night Shift (3D Horror Prototype)</title>
   <style>
     :root { color-scheme: dark; }
     body {
       margin: 0;
       font-family: Inter, system-ui, sans-serif;
-      background: radial-gradient(circle at 15% 0%, #1f1a3d 0%, #0b0e1e 50%, #06070f 100%);
-      color: #e9eeff;
+      background: #020306;
+      color: #e9edf3;
+      overflow: hidden;
     }
-    .layout { display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; }
+    #game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+    .ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: 1fr auto;
+    }
     .panel {
-      background: rgba(11, 14, 30, 0.9);
-      border: 1px solid #343f79;
+      margin: 12px;
+      padding: 10px 12px;
+      border: 1px solid #344055;
       border-radius: 10px;
-      padding: 12px;
-      box-shadow: 0 14px 38px rgba(0,0,0,.35);
+      background: rgba(8, 12, 20, 0.72);
+      align-self: start;
+      max-width: 320px;
+      backdrop-filter: blur(2px);
     }
-    h1 { margin: 0 0 8px; font-size: 1.08rem; }
-    .stat { margin: 6px 0; font-size: .92rem; }
-    .hint { color: #b4c3ff; font-size: .85rem; }
-    .log {
-      margin-top: 10px;
-      min-height: 180px;
-      max-height: 280px;
-      overflow: auto;
-      white-space: pre-wrap;
-      background: #0a0d1c;
-      border: 1px solid #37458a;
-      border-radius: 8px;
-      padding: 8px;
-      font-size: .87rem;
+    .line { font-size: .9rem; margin: 4px 0; }
+    .help {
+      position: fixed;
+      right: 12px;
+      top: 12px;
+      border: 1px solid #344055;
+      border-radius: 10px;
+      background: rgba(8,12,20,.72);
+      padding: 10px 12px;
+      font-size: .86rem;
+      max-width: 330px;
     }
-    button {
+    .center {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-size: 1.05rem;
+      text-shadow: 0 2px 12px #000;
+      pointer-events: none;
+    }
+    .crosshair {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      margin-top: -5px;
+      border: 1px solid rgba(220,230,255,.45);
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(180,210,255,.35);
+      pointer-events: none;
+    }
+    #startScreen {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 50% 20%, rgba(30,35,50,.45), rgba(1,2,5,.95));
+      z-index: 20;
+    }
+    .start-card {
+      width: min(760px, 92vw);
+      background: rgba(8, 12, 20, .85);
+      border: 1px solid #3c4960;
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    }
+    .start-card h1 { margin: 0 0 10px; }
+    .start-card p { margin: 8px 0; color: #cfd8e7; }
+    .start-card button {
       margin-top: 10px;
-      background: #222f65;
-      border: 1px solid #485db5;
+      pointer-events: auto;
+      border: 1px solid #506489;
+      background: #1b2942;
+      color: #f2f6ff;
       border-radius: 8px;
-      color: #f5f8ff;
-      padding: 7px 11px;
+      padding: 9px 14px;
+      font-size: .95rem;
       cursor: pointer;
     }
-    canvas {
-      width: 100%;
-      border: 1px solid #323f7a;
-      border-radius: 10px;
-      image-rendering: pixelated;
-      background: #080a16;
+    #jumpscare {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      z-index: 30;
+      background: rgba(0,0,0,.65);
+      pointer-events: none;
     }
-    @media (max-width: 1060px) { .layout { grid-template-columns: 1fr; } }
+    .face {
+      width: min(70vmin, 620px);
+      aspect-ratio: 1/1;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 45% 35%, #f4f4f4 0 4%, #5a0000 5% 7%, transparent 8%),
+        radial-gradient(circle at 58% 35%, #f4f4f4 0 4%, #5a0000 5% 7%, transparent 8%),
+        radial-gradient(circle at 50% 57%, #250000 0 10%, transparent 11%),
+        radial-gradient(circle at 50% 50%, #a11111 0%, #3e0202 56%, #000 78%);
+      filter: contrast(1.4) saturate(1.3);
+      box-shadow: 0 0 180px rgba(200,18,18,.8);
+      animation: shake .06s infinite alternate;
+    }
+    @keyframes shake { from { transform: translate(-4px, -2px) scale(1.02); } to { transform: translate(4px, 2px) scale(1); } }
+    #blood {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(120,8,16,.28) 90%);
+      opacity: 0;
+      transition: opacity .18s;
+    }
   </style>
 </head>
 <body>
-  <main class="layout">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="blood"></div>
+
+  <div class="ui">
     <section class="panel">
-      <h1>LATTICE PARADOX</h1>
-      <div class="stat" id="levelStat"></div>
-      <div class="stat" id="stateStat"></div>
-      <div class="stat" id="coreStat"></div>
-      <div class="stat" id="dashStat"></div>
-      <div class="stat" id="echoStat"></div>
-      <div class="stat" id="gravStat"></div>
-      <div class="hint">Move: A/D or ←/→ • Jump: Space/W/↑ • Dash: Shift</div>
-      <div class="hint">Echo Record: R (hold memory) • Echo Deploy/Recall: F</div>
-      <button id="restartBtn">Restart campaign</button>
-      <div class="log" id="log"></div>
+      <div class="line"><strong>ECHO CENSUS — NIGHT SHIFT</strong></div>
+      <div class="line" id="objective"></div>
+      <div class="line" id="sanity"></div>
+      <div class="line" id="notes"></div>
+      <div class="line" id="threat"></div>
     </section>
-    <section class="panel">
-      <canvas id="game" width="1152" height="672"></canvas>
-    </section>
-  </main>
+    <div></div>
+  </div>
+
+  <div class="help">
+    <div><strong>Controls</strong></div>
+    <div>WASD: move</div>
+    <div>Mouse: look</div>
+    <div>E: interact</div>
+    <div>Shift: sprint (louder)</div>
+    <div>Goal: collect 3 ritual records + reach elevator</div>
+  </div>
+
+  <div class="center" id="msg"></div>
+  <div class="crosshair"></div>
+
+  <section id="startScreen">
+    <div class="start-card">
+      <h1>The Echo Census: Night Shift</h1>
+      <p>You are the only auditor sent into Block 13. Find the three ritual records and reach the elevator.</p>
+      <p>The building learns your routes. If you repeat yourself, it sends your echo ahead of you.</p>
+      <button id="startBtn">Start shift (click to lock mouse)</button>
+    </div>
+  </section>
+
+  <section id="jumpscare"><div class="face"></div></section>
 
   <script>
-    const TILE = 32;
-    const GRAVITY = 1900;
-
-    const LEVELS = [
-      {
-        name: 'Level 1 — Fracture Dock',
-        neededCores: 2,
-        map: [
-          '############################################',
-          '#S....C.......................B...........G#',
-          '#....#####..............#####..............#',
-          '#...............^...........................#',
-          '#.............#####.........................#',
-          '#.........................C.................#',
-          '#...............######......................#',
-          '#...........................................#',
-          '#...............^....####...................#',
-          '#.................T.........................#',
-          '#........#####...................#####......#',
-          '#......................^....................#',
-          '#......##########################...........#',
-          '#...........................................#',
-          '############################################'
-        ]
-      },
-      {
-        name: 'Level 2 — Switch Choir',
-        neededCores: 3,
-        map: [
-          '############################################',
-          '#S..................D...............C.....G#',
-          '#....######..........................######.#',
-          '#.............P.............................#',
-          '#...........######....................^.....#',
-          '#...........................#####...........#',
-          '#....C.........................P............#',
-          '#.........#####..............######.........#',
-          '#.................^.........................#',
-          '#.......................D...................#',
-          '#....#####..................................#',
-          '#...............C..............#####........#',
-          '#.................T..........................#',
-          '#...........................................#',
-          '############################################'
-        ]
-      },
-      {
-        name: 'Level 3 — Inversion Garden',
-        neededCores: 4,
-        map: [
-          '############################################',
-          '#S.............C.............D..........C..#',
-          '#....#####.............#####..........######',
-          '#................^..........................#',
-          '#........T...............P..................#',
-          '#....#######............................^...#',
-          '#............C.................#####........#',
-          '#.....................#####.................#',
-          '#.....^...............................C.....#',
-          '#..........######..............######.......#',
-          '#.......................D...................#',
-          '#....#####..............................G...#',
-          '#.................P.........................#',
-          '#...........................................#',
-          '############################################'
-        ]
-      }
-    ];
-
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const keys = new Set();
 
-    const levelStat = document.getElementById('levelStat');
-    const stateStat = document.getElementById('stateStat');
-    const coreStat = document.getElementById('coreStat');
-    const dashStat = document.getElementById('dashStat');
-    const echoStat = document.getElementById('echoStat');
-    const gravStat = document.getElementById('gravStat');
-    const logEl = document.getElementById('log');
+    const objectiveEl = document.getElementById('objective');
+    const sanityEl = document.getElementById('sanity');
+    const notesEl = document.getElementById('notes');
+    const threatEl = document.getElementById('threat');
+    const msgEl = document.getElementById('msg');
+    const startScreen = document.getElementById('startScreen');
+    const jumpscareEl = document.getElementById('jumpscare');
+    const bloodEl = document.getElementById('blood');
 
-    function log(text) {
-      logEl.textContent += (logEl.textContent ? '\n' : '') + text;
-      logEl.scrollTop = logEl.scrollHeight;
+    const MAP = [
+      '############################',
+      '#S....#.....#....N.....#..#',
+      '#.###.#.###.#.#######..#..#',
+      '#...#.#...#.#.#.....#..#..#',
+      '#.#.#.###.#.#.#.###.#..#..#',
+      '#.#...#...#.#.#.#...#..#..#',
+      '#.#####.###.#.#.#.###..#..#',
+      '#.....#...#.#.#.#...#..#..#',
+      '###.#.###.#.#.#.###.#..#..#',
+      '#...#...#.#...#...#.#..#..#',
+      '#.#####.#.#######.#.#..#..#',
+      '#.....#.#...R.....#.#..#E.#',
+      '#.###.#.###.#####.#.#..#..#',
+      '#...#...N.#.....#...#..#..#',
+      '#.#.#####.#####.#####..#..#',
+      '#.#.....#.....#.....#..#..#',
+      '#.#####.#####.#####.#..#..#',
+      '#...R...#...#...N...#..#..#',
+      '############################'
+    ];
+
+    const TILE = 1;
+    const FOV = Math.PI / 3;
+    const RAY_COUNT = 280;
+    const MAX_DIST = 22;
+
+    let running = false;
+    let last = performance.now();
+    let message = 'Find all ritual records.';
+    let messageTimer = 0;
+
+    const game = {
+      x: 1.5,
+      y: 1.5,
+      a: 0,
+      sanity: 100,
+      footsteps: 0,
+      notesRead: 0,
+      records: 0,
+      won: false,
+      dead: false,
+      scareCooldown: 1,
+      scareFlags: new Set(),
+      patrolSeed: 0,
+      threat: 0,
+      noteTexts: [
+        'Record A: "Inspector 41 replaced by pre-computed behavior shell."',
+        'Record B: "Elevator accepts human voiceprint after profile extraction."',
+        'Record C: "Echo deployment complete. Original source optional."'
+      ],
+      foundNotes: [],
+      repeatingRouteCounter: 0,
+      lastCell: null,
+      spawn: {x: 1.5, y: 1.5}
+    };
+
+    const records = [];
+    const notes = [];
+    let elevator = {x: 24.5, y: 11.5};
+
+    function mapCell(x, y) {
+      const gx = Math.floor(x);
+      const gy = Math.floor(y);
+      if (gy < 0 || gy >= MAP.length || gx < 0 || gx >= MAP[0].length) return '#';
+      return MAP[gy][gx];
     }
 
-    function overlap(a, b) {
-      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-    }
+    function isWall(x, y) { return mapCell(x, y) === '#'; }
 
-    function parseLevel(raw) {
-      const solids = [];
-      const spikes = [];
-      const cores = [];
-      const doors = [];
-      const plates = [];
-      const toggles = [];
-      const bounces = [];
-      let spawn = { x: 2, y: 2 };
-      let goal = { x: 3, y: 3, w: 1, h: 1 };
-
-      raw.map.forEach((row, y) => {
-        [...row].forEach((ch, x) => {
-          if (ch === '#') solids.push({ x, y, w: 1, h: 1 });
-          if (ch === '^') spikes.push({ x, y: y + 0.72, w: 1, h: 0.28 });
-          if (ch === 'C') cores.push({ x: x + 0.5, y: y + 0.5, got: false });
-          if (ch === 'S') spawn = { x: x + 0.1, y: y + 0.1 };
-          if (ch === 'G') goal = { x: x + 0.12, y: y + 0.12, w: 0.76, h: 0.76 };
-          if (ch === 'D') doors.push({ x, y, w: 1, h: 1, open: false });
-          if (ch === 'P') plates.push({ x, y: y + 0.85, w: 1, h: 0.15, pressed: false });
-          if (ch === 'T') toggles.push({ x: x + 0.2, y: y + 0.2, w: 0.6, h: 0.6, cooldown: 0 });
-          if (ch === 'B') bounces.push({ x, y: y + 0.84, w: 1, h: 0.16 });
-        });
-      });
-
-      return { ...raw, solids, spikes, cores, doors, plates, toggles, bounces, spawn, goal, width: raw.map[0].length, height: raw.map.length };
-    }
-
-    function newCampaign() {
-      return {
-        levelIndex: 0,
-        totalDeaths: 0,
-        totalTime: 0,
-      };
-    }
-
-    let campaign = newCampaign();
-    let level = parseLevel(LEVELS[campaign.levelIndex]);
-
-    function makePlayer() {
-      return {
-        x: level.spawn.x,
-        y: level.spawn.y,
-        w: 0.78,
-        h: 0.92,
-        vx: 0,
-        vy: 0,
-        facing: 1,
-        onGround: false,
-        wall: 0,
-        coyote: 0,
-        jumpBuffer: 0,
-        jumpExtra: 1,
-        dashCooldown: 0,
-        dashTimer: 0,
-        dashDir: 1,
-        gravitySign: 1,
-        gravityTimer: 0,
-      };
-    }
-
-    let player = makePlayer();
-    let cameraX = 0;
-    let particles = [];
-    let message = 'Reach the portal, but collect enough cores first.';
-    let wonCampaign = false;
-
-    let recording = false;
-    let echoFrames = [];
-    let echoMemory = 2.8;
-    let echo = null;
-
-    function solidsNow() {
-      return [...level.solids, ...level.doors.filter(d => !d.open)];
-    }
-
-    function collideAt(nx, ny) {
-      const box = { x: nx, y: ny, w: player.w, h: player.h };
-      return solidsNow().find(s => overlap(box, s));
-    }
-
-    function resetAtSpawn() {
-      player = makePlayer();
-      echo = null;
-      recording = false;
-      echoFrames = [];
-      campaign.totalDeaths += 1;
-      message = 'Reconstituted at nearest lattice anchor.';
-    }
-
-    function particlesBurst(x, y, color, n = 10) {
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const s = 1 + Math.random() * 3;
-        particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.45 + Math.random() * 0.5, color });
+    function setupPoints() {
+      for (let y = 0; y < MAP.length; y++) {
+        for (let x = 0; x < MAP[0].length; x++) {
+          const c = MAP[y][x];
+          if (c === 'S') { game.x = x + .5; game.y = y + .5; game.spawn = {x: game.x, y: game.y}; }
+          if (c === 'R') records.push({x: x + .5, y: y + .5, got: false});
+          if (c === 'N') notes.push({x: x + .5, y: y + .5, got: false, text: game.noteTexts[notes.length % game.noteTexts.length]});
+          if (c === 'E') elevator = {x: x + .5, y: y + .5};
+        }
       }
     }
 
-    function nextLevel() {
-      campaign.levelIndex += 1;
-      if (campaign.levelIndex >= LEVELS.length) {
-        wonCampaign = true;
-        message = 'Campaign complete. You broke the lattice paradox.';
-        log('END: Campaign cleared.');
+    setupPoints();
+
+    function castRay(angle) {
+      const sin = Math.sin(angle);
+      const cos = Math.cos(angle);
+      for (let d = 0; d < MAX_DIST; d += 0.03) {
+        const x = game.x + cos * d;
+        const y = game.y + sin * d;
+        if (isWall(x, y)) return { d, x, y };
+      }
+      return { d: MAX_DIST, x: game.x + cos * MAX_DIST, y: game.y + sin * MAX_DIST };
+    }
+
+    function drawWorld() {
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const flicker = 0.93 + Math.sin(performance.now() * 0.022) * 0.05;
+      // ceiling
+      ctx.fillStyle = `rgb(${Math.floor(12*flicker)},${Math.floor(14*flicker)},${Math.floor(20*flicker)})`;
+      ctx.fillRect(0, 0, w, h/2);
+      // floor
+      ctx.fillStyle = `rgb(${Math.floor(10*flicker)},${Math.floor(8*flicker)},${Math.floor(8*flicker)})`;
+      ctx.fillRect(0, h/2, w, h/2);
+
+      for (let i = 0; i < RAY_COUNT; i++) {
+        const t = i / RAY_COUNT;
+        const rayAngle = game.a - FOV/2 + t * FOV;
+        const hit = castRay(rayAngle);
+        const corrected = hit.d * Math.cos(rayAngle - game.a);
+        const wallH = Math.min(h, (h / Math.max(0.0001, corrected)) * 0.8);
+        const shade = Math.max(0, 220 - corrected * 18);
+        const x = i * (w / RAY_COUNT);
+        const y = h / 2 - wallH / 2;
+
+        ctx.fillStyle = `rgb(${shade*.5},${shade*.58},${shade*.72})`;
+        ctx.fillRect(x, y, Math.ceil(w / RAY_COUNT) + 1, wallH);
+      }
+
+      // draw collectible sprites in pseudo-3d
+      drawSpriteSet(records.filter(r => !r.got), '#60ffd8', 0.22);
+      drawSpriteSet(notes.filter(n => !n.got), '#9db8ff', 0.18);
+      if (!game.won) drawSpriteSet([elevator], game.records >= 3 ? '#d485ff' : '#666284', 0.28);
+
+      // scare apparition
+      if (game.threat > 0.35 && !game.dead && !game.won) {
+        const offset = Math.sin(performance.now() * 0.004) * 0.35;
+        const gx = game.x + Math.cos(game.a + offset) * (1.8 + Math.sin(performance.now() * 0.001)*.5);
+        const gy = game.y + Math.sin(game.a + offset) * (1.8 + Math.cos(performance.now() * 0.0012)*.5);
+        drawSpriteSet([{x:gx,y:gy}], 'rgba(255,40,52,.82)', 0.42);
+      }
+
+      // vignette
+      const grad = ctx.createRadialGradient(w/2,h/2,120,w/2,h/2,Math.max(w,h)/1.2);
+      grad.addColorStop(0,'rgba(0,0,0,0)');
+      grad.addColorStop(1,`rgba(0,0,0,${0.72 + (100-game.sanity)/220})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,w,h);
+    }
+
+    function drawSpriteSet(items, color, scale) {
+      const w = canvas.width;
+      const h = canvas.height;
+      for (const s of items) {
+        const dx = s.x - game.x;
+        const dy = s.y - game.y;
+        const dist = Math.hypot(dx, dy);
+        const ang = Math.atan2(dy, dx) - game.a;
+        let norm = ang;
+        while (norm > Math.PI) norm -= Math.PI*2;
+        while (norm < -Math.PI) norm += Math.PI*2;
+        if (Math.abs(norm) > FOV/1.8) continue;
+        const size = (h / Math.max(0.3, dist)) * scale;
+        const sx = (norm / (FOV/2)) * (w/2) + w/2 - size/2;
+        const sy = h/2 - size/2;
+        const wall = castRay(game.a + norm);
+        if (wall.d < dist) continue;
+        ctx.fillStyle = color;
+        ctx.fillRect(sx, sy, size, size);
+      }
+    }
+
+    function canMove(nx, ny) {
+      const pad = 0.16;
+      return !isWall(nx-pad, ny-pad) && !isWall(nx+pad, ny-pad) && !isWall(nx-pad, ny+pad) && !isWall(nx+pad, ny+pad);
+    }
+
+    function tryInteract() {
+      if (game.dead || game.won) return;
+      let best = null;
+      for (const r of records.filter(r => !r.got)) {
+        const d = Math.hypot(r.x-game.x, r.y-game.y);
+        if (d < 1.2 && (!best || d < best.d)) best = {type:'record', ref:r, d};
+      }
+      for (const n of notes.filter(n => !n.got)) {
+        const d = Math.hypot(n.x-game.x, n.y-game.y);
+        if (d < 1.2 && (!best || d < best.d)) best = {type:'note', ref:n, d};
+      }
+
+      const eDist = Math.hypot(elevator.x-game.x, elevator.y-game.y);
+      if (eDist < 1.4 && (!best || eDist < best.d)) best = {type:'elevator', d:eDist};
+
+      if (!best) {
+        setMessage('Nothing useful here.', 1.1);
         return;
       }
-      level = parseLevel(LEVELS[campaign.levelIndex]);
-      player = makePlayer();
-      echo = null;
-      recording = false;
-      echoFrames = [];
-      message = 'New shard-zone loaded.';
-      log('Transition: ' + level.name);
-    }
 
-    function updateEcho(dt) {
-      if (recording) {
-        if (echoFrames.length < 360) {
-          echoFrames.push({ x: player.x, y: player.y });
-        }
-        echoMemory = Math.max(0, echoMemory - dt);
-        if (echoMemory <= 0) {
-          recording = false;
-          message = 'Echo memory full. Deploy with F.';
-        }
-      } else {
-        echoMemory = Math.min(2.8, echoMemory + dt * 0.45);
+      if (best.type === 'record') {
+        best.ref.got = true;
+        game.records += 1;
+        setMessage('Ritual record secured.', 1.4);
+        triggerScare('record-' + game.records, 350);
+        return;
       }
-
-      if (echo) {
-        echo.t += dt * 60;
-        const idx = Math.floor(echo.t) % echo.path.length;
-        const a = echo.path[idx];
-        echo.x = a.x;
-        echo.y = a.y;
+      if (best.type === 'note') {
+        best.ref.got = true;
+        game.notesRead += 1;
+        game.foundNotes.push(best.ref.text);
+        setMessage(best.ref.text, 3.4);
+        return;
+      }
+      if (best.type === 'elevator') {
+        if (game.records >= 3) {
+          game.won = true;
+          setMessage('Elevator doors close. You escaped... maybe.', 9);
+        } else {
+          setMessage(`Elevator locked: ${3 - game.records} ritual records missing.`, 1.8);
+          triggerScare('elevator-denied', 450);
+        }
       }
     }
 
-    function updateDoorsAndPlates() {
-      level.plates.forEach(p => p.pressed = false);
-      for (const p of level.plates) {
-        if (overlap(p, player)) p.pressed = true;
-        if (echo && overlap(p, { x: echo.x, y: echo.y, w: player.w, h: player.h })) p.pressed = true;
-      }
-      const anyPressed = level.plates.some(p => p.pressed);
-      level.doors.forEach(d => d.open = anyPressed);
+    function triggerScare(tag, dur = 420) {
+      if (game.scareCooldown > 0 && game.scareFlags.has(tag)) return;
+      game.scareFlags.add(tag);
+      jumpscareEl.style.display = 'grid';
+      bloodEl.style.opacity = '1';
+      game.sanity = Math.max(0, game.sanity - 14);
+      game.scareCooldown = 1.7;
+      setTimeout(() => {
+        jumpscareEl.style.display = 'none';
+        bloodEl.style.opacity = '0';
+      }, dur);
+    }
+
+    function setMessage(text, sec = 1.5) {
+      message = text;
+      messageTimer = sec;
     }
 
     function update(dt) {
-      if (wonCampaign) return;
-      campaign.totalTime += dt;
+      if (!running || game.dead || game.won) return;
 
-      const left = keys.has('a') || keys.has('arrowleft');
-      const right = keys.has('d') || keys.has('arrowright');
-      const jumpPressed = keys.has('jump-press');
-      const dashPressed = keys.has('dash-press');
+      game.scareCooldown = Math.max(0, game.scareCooldown - dt);
+      messageTimer = Math.max(0, messageTimer - dt);
 
-      if (jumpPressed) player.jumpBuffer = 0.12;
-      player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
-      player.coyote = player.onGround ? 0.1 : Math.max(0, player.coyote - dt);
-      player.dashCooldown = Math.max(0, player.dashCooldown - dt);
-      player.gravityTimer = Math.max(0, player.gravityTimer - dt);
+      const moveSpeed = (keys.has('shift') ? 2.6 : 1.9) * dt;
+      const rotSpeed = 1.7 * dt;
 
-      if (player.gravityTimer <= 0 && player.gravitySign === -1) {
-        player.gravitySign = 1;
-        message = 'Gravity normalized.';
+      if (keys.has('arrowleft')) game.a -= rotSpeed;
+      if (keys.has('arrowright')) game.a += rotSpeed;
+
+      let mx = 0, my = 0;
+      if (keys.has('w')) { mx += Math.cos(game.a) * moveSpeed; my += Math.sin(game.a) * moveSpeed; game.footsteps += 1.6*dt; }
+      if (keys.has('s')) { mx -= Math.cos(game.a) * moveSpeed; my -= Math.sin(game.a) * moveSpeed; game.footsteps += 1.2*dt; }
+      if (keys.has('a')) { mx += Math.cos(game.a - Math.PI/2) * moveSpeed; my += Math.sin(game.a - Math.PI/2) * moveSpeed; game.footsteps += 1.2*dt; }
+      if (keys.has('d')) { mx += Math.cos(game.a + Math.PI/2) * moveSpeed; my += Math.sin(game.a + Math.PI/2) * moveSpeed; game.footsteps += 1.2*dt; }
+
+      const nx = game.x + mx;
+      const ny = game.y + my;
+      if (canMove(nx, game.y)) game.x = nx;
+      if (canMove(game.x, ny)) game.y = ny;
+
+      const cell = `${Math.floor(game.x)},${Math.floor(game.y)}`;
+      if (game.lastCell === cell) game.repeatingRouteCounter += dt;
+      else game.repeatingRouteCounter = Math.max(0, game.repeatingRouteCounter - dt*1.7);
+      game.lastCell = cell;
+
+      // threat model
+      game.threat = Math.min(1, Math.max(0, game.threat + (keys.has('shift') ? .32 : .12) * dt + game.repeatingRouteCounter*0.02 - 0.08*dt));
+      if (game.footsteps > 14) {
+        game.footsteps = 0;
+        if (Math.random() < game.threat * 0.28) triggerScare('footstep-' + Math.floor(performance.now()/1000), 260 + Math.random()*260);
       }
 
-      const target = (right ? 1 : 0) - (left ? 1 : 0);
-      if (target !== 0) player.facing = target;
-      const accel = player.onGround ? 2400 : 1400;
-      const maxV = player.onGround ? 8.2 : 7.2;
-      const desired = target * maxV;
-      if (desired > player.vx) player.vx = Math.min(desired, player.vx + accel * dt / 100);
-      if (desired < player.vx) player.vx = Math.max(desired, player.vx - accel * dt / 100);
-      if (desired === 0) player.vx *= player.onGround ? 0.78 : 0.96;
+      // scripted zone scares
+      if (game.x > 12 && game.y > 10 && !game.scareFlags.has('zone-laundry')) triggerScare('zone-laundry', 520);
+      if (game.x > 20 && game.y < 6 && !game.scareFlags.has('zone-stair')) triggerScare('zone-stair', 470);
 
-      if (player.dashTimer > 0) {
-        player.dashTimer -= dt;
-        player.vx = player.dashDir * 15;
-        player.vy = 0;
-      } else {
-        player.vy += GRAVITY * player.gravitySign * dt / 100;
-        if (player.wall !== 0 && !player.onGround && player.gravitySign === 1 && player.vy > 2.2) player.vy = 2.2;
+      // sanity drain and death
+      game.sanity = Math.max(0, game.sanity - game.threat * 1.8 * dt);
+      if (game.sanity <= 0 && !game.dead) {
+        game.dead = true;
+        jumpscareEl.style.display = 'grid';
+        setMessage('Your Echo finalized the report in your name.', 999);
       }
-
-      if (dashPressed && player.dashCooldown <= 0) {
-        player.dashCooldown = 0.75;
-        player.dashTimer = 0.16;
-        player.dashDir = target !== 0 ? target : player.facing;
-        particlesBurst(player.x + 0.4, player.y + 0.45, '#66dcff', 14);
-        message = 'Dash pulse.';
-      }
-
-      if (player.jumpBuffer > 0) {
-        if (player.coyote > 0) {
-          player.vy = -11.2 * player.gravitySign;
-          player.onGround = false;
-          player.coyote = 0;
-          player.jumpBuffer = 0;
-          player.jumpExtra = 1;
-          particlesBurst(player.x + 0.4, player.y + (player.gravitySign > 0 ? 0.95 : 0), '#bbf6ff', 8);
-        } else if (player.wall !== 0) {
-          player.vy = -10.3 * player.gravitySign;
-          player.vx = -player.wall * 8;
-          player.jumpBuffer = 0;
-          message = 'Wall ricochet.';
-          particlesBurst(player.x + 0.4, player.y + 0.45, '#f3cbff', 10);
-        } else if (player.jumpExtra > 0) {
-          player.vy = -9.8 * player.gravitySign;
-          player.jumpExtra -= 1;
-          player.jumpBuffer = 0;
-          message = 'Echo jump.';
-          particlesBurst(player.x + 0.4, player.y + 0.45, '#ffe08a', 12);
-        }
-      }
-
-      // movement + collision
-      player.x += player.vx * dt;
-      let hit = collideAt(player.x, player.y);
-      if (hit) {
-        if (player.vx > 0) player.x = hit.x - player.w;
-        if (player.vx < 0) player.x = hit.x + hit.w;
-        player.vx = 0;
-      }
-
-      player.onGround = false;
-      player.wall = 0;
-      player.y += player.vy * dt;
-      hit = collideAt(player.x, player.y);
-      if (hit) {
-        if (player.vy * player.gravitySign > 0) {
-          player.y = player.gravitySign > 0 ? hit.y - player.h : hit.y + hit.h;
-          player.vy = 0;
-          player.onGround = true;
-        } else {
-          player.y = player.gravitySign > 0 ? hit.y + hit.h : hit.y - player.h;
-          player.vy = 0;
-        }
-      }
-
-      if (!player.onGround) {
-        if (collideAt(player.x - 0.03, player.y)) player.wall = -1;
-        if (collideAt(player.x + 0.03, player.y)) player.wall = 1;
-      }
-
-      // level interactions
-      for (const c of level.cores) {
-        if (!c.got && overlap(player, { x: c.x - 0.26, y: c.y - 0.26, w: 0.52, h: 0.52 })) {
-          c.got = true;
-          particlesBurst(c.x, c.y, '#72ffe1', 18);
-          message = 'Core absorbed.';
-          log('Core captured (' + level.cores.filter(x => x.got).length + '/' + level.neededCores + ' required).');
-        }
-      }
-
-      for (const s of level.spikes) {
-        if (overlap(player, s)) {
-          log('Failure: phase spine collision.');
-          resetAtSpawn();
-          return;
-        }
-      }
-
-      for (const b of level.bounces) {
-        if (overlap(player, b) && player.vy * player.gravitySign > 0) {
-          player.vy = -14 * player.gravitySign;
-          particlesBurst(player.x + 0.4, player.y + 0.45, '#a9ff88', 12);
-          message = 'Bloom spring launched you.';
-        }
-      }
-
-      for (const t of level.toggles) {
-        t.cooldown = Math.max(0, t.cooldown - dt);
-        if (t.cooldown <= 0 && overlap(player, t)) {
-          player.gravitySign *= -1;
-          player.gravityTimer = 4.2;
-          t.cooldown = 1.1;
-          message = 'Gravity inverted for 4.2s.';
-          particlesBurst(player.x + 0.4, player.y + 0.45, '#ff8eff', 14);
-        }
-      }
-
-      updateEcho(dt);
-      updateDoorsAndPlates();
-
-      if (player.y > level.height + 3 || player.y < -4) {
-        log('Failure: drifted outside lattice bounds.');
-        resetAtSpawn();
-        return;
-      }
-
-      const got = level.cores.filter(c => c.got).length;
-      if (overlap(player, level.goal)) {
-        if (got >= level.neededCores) {
-          log('Exit unlocked for ' + level.name + '.');
-          nextLevel();
-          return;
-        }
-        message = `Need ${level.neededCores - got} more core(s).`;
-      }
-
-      // particle updates
-      for (const p of particles) {
-        p.life -= dt;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.vy += 13 * dt;
-      }
-      particles = particles.filter(p => p.life > 0);
-
-      cameraX = Math.max(0, Math.min(level.width - canvas.width / TILE, player.x - 7));
-
-      keys.delete('jump-press');
-      keys.delete('dash-press');
     }
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // background layers
-      ctx.fillStyle = '#090d1d';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      for (let i = 0; i < 120; i++) {
-        const x = (i * 97 + cameraX * 18) % canvas.width;
-        const y = (i * 53) % canvas.height;
-        ctx.fillStyle = i % 8 === 0 ? '#9bb7ff' : '#34416d';
-        ctx.fillRect(x, y, 2, 2);
-      }
-
-      const scale = TILE;
-      function rect(r, color) {
-        ctx.fillStyle = color;
-        ctx.fillRect((r.x - cameraX) * scale, r.y * scale, r.w * scale, r.h * scale);
-      }
-
-      level.solids.forEach(s => rect(s, '#2c3869'));
-      level.doors.forEach(d => rect(d, d.open ? 'rgba(74,95,170,0.25)' : '#4c5fb5'));
-      level.spikes.forEach(s => rect(s, '#742447'));
-      level.plates.forEach(p => rect(p, p.pressed ? '#8dff9f' : '#51835f'));
-      level.bounces.forEach(b => rect(b, '#84c95e'));
-      level.toggles.forEach(t => rect(t, '#bf67ff'));
-
-      // goal
-      const gPulse = 0.5 + Math.sin(performance.now() * 0.006) * 0.35;
-      ctx.fillStyle = `rgba(146, 227, 255, ${0.3 + gPulse * 0.6})`;
-      rect(level.goal, ctx.fillStyle);
-
-      // cores
-      for (const c of level.cores) {
-        if (c.got) continue;
-        const bob = Math.sin(performance.now() * 0.006 + c.x * 2) * 4;
-        const x = (c.x - cameraX) * scale;
-        const y = c.y * scale + bob;
-        ctx.fillStyle = '#77ffe9';
-        ctx.beginPath();
-        ctx.moveTo(x, y - 8);
-        ctx.lineTo(x + 7, y);
-        ctx.lineTo(x, y + 8);
-        ctx.lineTo(x - 7, y);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      // echo replay clone
-      if (echo) {
-        ctx.globalAlpha = 0.45;
-        ctx.fillStyle = '#9bc9ff';
-        ctx.fillRect((echo.x - cameraX) * scale, echo.y * scale, player.w * scale, player.h * scale);
-        ctx.globalAlpha = 1;
-      }
-
-      // player sprite
-      const px = (player.x - cameraX) * scale;
-      const py = player.y * scale;
-      const run = Math.sin(performance.now() * 0.016 * (1 + Math.abs(player.vx) * 0.3));
-      const bodyW = player.w * scale;
-      const bodyH = player.h * scale;
-      ctx.save();
-      ctx.translate(px + bodyW / 2, py + bodyH / 2);
-      ctx.rotate(run * 0.02);
-      if (player.dashTimer > 0) {
-        ctx.fillStyle = 'rgba(105,220,255,0.4)';
-        ctx.fillRect(-bodyW, -bodyH / 2, bodyW * 0.9, bodyH);
-      }
-      ctx.fillStyle = '#f0f5ff';
-      ctx.fillRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
-      ctx.fillStyle = '#6fb1ff';
-      ctx.fillRect(player.facing > 0 ? 2 : -14, -8, 12, 7);
-      ctx.fillStyle = '#8fa8ff';
-      const leg = player.onGround ? run * 4 : 0;
-      ctx.fillRect(-bodyW/3, bodyH/2 - 4, 6, 10 + leg);
-      ctx.fillRect(bodyW/6, bodyH/2 - 4, 6, 10 - leg);
-      ctx.restore();
-
-      // particles
-      for (const p of particles) {
-        ctx.globalAlpha = Math.max(0, p.life * 1.2);
-        ctx.fillStyle = p.color;
-        ctx.fillRect((p.x - cameraX) * scale, p.y * scale, 4, 4);
-      }
-      ctx.globalAlpha = 1;
+    function renderUI() {
+      objectiveEl.textContent = `Objective: records ${game.records}/3${game.won ? ' • extraction complete' : ''}`;
+      sanityEl.textContent = `Sanity: ${Math.floor(game.sanity)}%`;
+      notesEl.textContent = `Notes recovered: ${game.notesRead}/${notes.length}`;
+      threatEl.textContent = `Threat: ${Math.floor(game.threat * 100)}%`;
+      msgEl.textContent = messageTimer > 0 || game.dead || game.won ? message : '';
     }
 
-    function updateUI() {
-      const got = level.cores.filter(c => c.got).length;
-      levelStat.textContent = wonCampaign ? 'Campaign: complete' : `Zone: ${campaign.levelIndex + 1}/${LEVELS.length} — ${level.name}`;
-      stateStat.textContent = wonCampaign ? 'Status: Victory' : `Status: active | deaths: ${campaign.totalDeaths}`;
-      coreStat.textContent = `Cores: ${got}/${level.neededCores} required (total in map ${level.cores.length})`;
-      dashStat.textContent = `Dash: ${player.dashCooldown <= 0 ? 'ready' : player.dashCooldown.toFixed(2) + 's'} | ${message}`;
-      echoStat.textContent = `Echo: ${recording ? 'recording...' : echo ? 'deployed' : 'idle'} | memory ${(echoMemory / 2.8 * 100).toFixed(0)}%`;
-      gravStat.textContent = `Gravity: ${player.gravitySign === 1 ? 'normal' : 'inverted'}${player.gravitySign === -1 ? ' (' + player.gravityTimer.toFixed(1) + 's)' : ''} | time ${campaign.totalTime.toFixed(1)}s`;
-    }
-
-    function restartCampaign() {
-      campaign = newCampaign();
-      level = parseLevel(LEVELS[0]);
-      player = makePlayer();
-      particles = [];
-      message = 'Campaign rebooted.';
-      wonCampaign = false;
-      recording = false;
-      echoFrames = [];
-      echoMemory = 2.8;
-      echo = null;
-      logEl.textContent = '';
-      log('Boot: Lattice Paradox initialized.');
-      log('Tip: Record an echo (R), deploy it (F) on pressure plates to open sealed doors.');
-    }
-
-    let last = performance.now();
     function loop(now) {
       const dt = Math.min(0.033, (now - last) / 1000);
       last = now;
       update(dt);
-      draw();
-      updateUI();
+      drawWorld();
+      renderUI();
       requestAnimationFrame(loop);
     }
 
     document.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
-      if (k === ' ' || k === 'w' || k === 'arrowup') keys.add('jump-press');
-      if (k === 'shift') keys.add('dash-press');
-      if (k === 'r' && !recording && echoMemory > 0.25) {
-        recording = true;
-        echoFrames = [];
-        message = 'Recording echo trail...';
-      } else if (k === 'r' && recording) {
-        recording = false;
-        message = 'Echo recording stopped. Deploy with F.';
-      }
-      if (k === 'f') {
-        if (echo) {
-          echo = null;
-          message = 'Echo recalled.';
-        } else if (echoFrames.length > 10) {
-          echo = { path: echoFrames.slice(), t: 0, x: echoFrames[0].x, y: echoFrames[0].y };
-          message = 'Echo deployed.';
-        } else {
-          message = 'No meaningful echo memory captured yet.';
-        }
-      }
+      if (k === 'e') tryInteract();
       keys.add(k);
-      if ([' ', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(k)) e.preventDefault();
+      if (['arrowleft','arrowright','arrowup','arrowdown',' '].includes(k)) e.preventDefault();
     });
     document.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
-    document.getElementById('restartBtn').onclick = restartCampaign;
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement === canvas && running && !game.dead && !game.won) {
+        game.a += e.movementX * 0.0025;
+      }
+    });
 
-    restartCampaign();
+    document.getElementById('startBtn').onclick = async () => {
+      running = true;
+      startScreen.style.display = 'none';
+      canvas.requestPointerLock();
+      setMessage('Proceed to checkpoint. Avoid predictable routes.', 2.4);
+    };
+
+    canvas.addEventListener('click', () => {
+      if (running && document.pointerLockElement !== canvas && !game.won && !game.dead) canvas.requestPointerLock();
+    });
+
     requestAnimationFrame(loop);
   </script>
 </body>
