@@ -140,6 +140,8 @@
       scareCooldown:2,
       scareCount:0,
       zones:new Set(),
+      progressStamp:0,
+      hintTimer:14,
       monster:{ x:20.5, y:24.5, tx:20.5, ty:24.5, stepTimer:0, hear:0 }
     };
 
@@ -185,7 +187,7 @@
     function initAudio(){
       if(audioCtx) return;
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      master = audioCtx.createGain(); master.gain.value = 0.14; master.connect(audioCtx.destination);
+      master = audioCtx.createGain(); master.gain.value = 0.11; master.connect(audioCtx.destination);
 
       const lp = audioCtx.createBiquadFilter();
       lp.type='lowpass'; lp.frequency.value = 360;
@@ -204,10 +206,10 @@
 
       setInterval(()=>{
         if(!game.running || game.dead || game.won) return;
-        if(Math.random() < 0.1 + game.phase*0.06){
-          playNoiseBurst(0.02 + game.phase*0.025, (Math.random()-0.5)*0.9);
+        if(Math.random() < 0.05 + game.phase*0.035){
+          playNoiseBurst(0.012 + game.phase*0.015, (Math.random()-0.5)*0.7);
         }
-      }, 1600);
+      }, 2400);
     }
 
     function playTone(freq=220,dur=0.6,gain=0.02,pan=0,type='sine'){
@@ -255,7 +257,7 @@
       const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); const p=audioCtx.createStereoPanner();
       o.type='square'; o.frequency.value=84+Math.random()*20;
       g.gain.setValueAtTime(0.0001,audioCtx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.018,audioCtx.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.009,audioCtx.currentTime+0.01);
       g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08);
       p.pan.value=(Math.random()-0.5)*0.2;
       o.connect(g).connect(p).connect(master); o.start(); o.stop(audioCtx.currentTime+0.09);
@@ -297,9 +299,14 @@
       const grime=Math.sin((hit.x*2.2+hit.y*1.4)*3.6)*0.08;
       const base=Math.max(0.10,1-dist/17.5) + stripe + grime + grout;
 
-      if(hit.c==='A' || hit.c==='B'){
-        return [88*base, 72*base, 50*base];
-      }
+      const ward = hit.y < 9;
+      const pump = hit.y > 20;
+      const archive = hit.x > 26 && hit.y > 14;
+
+      if(hit.c==='A' || hit.c==='B') return [92*base, 74*base, 52*base];
+      if(ward) return [88*base, 98*base, 126*base];
+      if(pump) return [72*base, 92*base, 84*base];
+      if(archive) return [94*base, 74*base, 92*base];
       return [74*base, 94*base, 124*base];
     }
 
@@ -411,6 +418,8 @@
       if(points.elevator) drawSpriteSet([points.elevator], 'elevator');
       drawSpriteSet(points.records?.filter(r=>!r.got)||[], 'record');
       if(game.phase>=2 && !game.hide) drawSpriteSet([game.monster], 'monster');
+      const tgt=currentTarget();
+      if(tgt) drawSpriteSet([tgt], 'note');
 
       const fog=ctx.createRadialGradient(w/2,h/2,120,w/2,h/2,Math.max(w,h)*0.7);
       fog.addColorStop(0,'rgba(0,0,0,0)');
@@ -575,7 +584,7 @@
       // positional sounds from monster
       if(Math.random()<0.04*dt*60 && game.phase>=2){
         const g = posGain(m.x,m.y,20);
-        if(g>0.02) playNoiseBurst(0.03 + g*0.12, posPan(m.x,m.y));
+        if(g>0.03) playNoiseBurst(0.012 + g*0.045, posPan(m.x,m.y));
       }
 
       if(!game.hide && Math.hypot(m.x-game.x,m.y-game.y)<0.7){
@@ -585,12 +594,37 @@
       }
     }
 
+
+    function currentTarget(){
+      if(!game.inventory.key) return points.key;
+      if(!game.doors.A) return {x:18.5,y:9.5};
+      if(!game.inventory.cassette) return points.cassette;
+      if(!game.inventory.generator) return points.generator;
+      if(!game.doors.B) return {x:11.5,y:25.5};
+      if(game.inventory.records<3){
+        const next=points.records.find(r=>!r.got); if(next) return next;
+      }
+      return points.elevator;
+    }
+
+    function objectiveHint(){
+      const t=currentTarget();
+      if(!t) return '';
+      const dx=t.x-game.x, dy=t.y-game.y;
+      const dist=Math.hypot(dx,dy);
+      const dir = Math.abs(dx)>Math.abs(dy)
+        ? (dx>0?'east':'west')
+        : (dy>0?'south':'north');
+      return `Signal ping: ${dir}, ~${Math.round(dist)}m.`;
+    }
+
     function update(dt){
       if(!game.running || game.dead || game.won) return;
 
       game.scareCooldown=Math.max(0,game.scareCooldown-dt);
       game.msgTimer=Math.max(0,game.msgTimer-dt);
       game.subtitleTimer=Math.max(0,game.subtitleTimer-dt);
+      game.hintTimer=Math.max(0,game.hintTimer-dt);
 
       if(game.hide){
         game.noise=Math.max(0,game.noise-36*dt);
@@ -644,11 +678,11 @@
         const step = scale[Math.floor(Math.random()*scale.length)];
         const freq = root * (2 ** (step/12));
         const pan = (Math.random()-0.5)*0.7;
-        playTone(freq, 0.7 + Math.random()*0.7, 0.008 + game.phase*0.004, pan, 'sine');
+        playTone(freq, 0.9 + Math.random()*0.8, 0.004 + game.phase*0.002, pan, 'sine');
         if(game.phase>=2 && Math.random()<0.45){
-          playTone(freq*0.5, 0.45, 0.006 + game.phase*0.003, -pan*0.6, 'triangle');
+          playTone(freq*0.5, 0.5, 0.003 + game.phase*0.0018, -pan*0.6, 'triangle');
         }
-        musicTimer = 2.2 + Math.random()*2.8 - game.phase*0.25;
+        musicTimer = 3.6 + Math.random()*3.2 - game.phase*0.35;
       }
 
       // Story beats by room / state
@@ -656,13 +690,23 @@
       if(game.x<9 && game.y>20 && !game.zones.has('pump')){ game.zones.add('pump'); setMessage('Pump hall walls pulse in time with your heartbeat.',3); }
 
       // Suspense before scares
-      if(game.phase>=1 && game.scareCooldown<=0 && Math.random()<0.02*dt*60){
-        setMessage('Metal scraping from the next room.',1.8);
+      if(game.phase>=1 && game.scareCooldown<=0 && Math.random()<0.006*dt*60){
+        setMessage('A door latch clicks somewhere nearby.',1.8);
         const mx=game.x+Math.cos(game.a+0.8)*4, my=game.y+Math.sin(game.a+0.8)*4;
-        playNoiseBurst(0.08 + game.phase*0.04, posPan(mx,my));
+        playNoiseBurst(0.025 + game.phase*0.012, posPan(mx,my));
       }
-      if(game.phase>=2 && game.scareCooldown<=0 && Math.random()<0.014*dt*60){
-        runScare('Contact event.', 440 + Math.random()*180);
+
+      // jumpscares tied to proximity and explicit pressure only
+      if(game.phase>=2 && !game.hide){
+        const md=Math.hypot(game.monster.x-game.x, game.monster.y-game.y);
+        if(game.scareCooldown<=0 && md<2.4 && Math.random()<0.12*dt*60){
+          runScare('It rushes past your peripheral vision.', 320 + Math.random()*160);
+        }
+      }
+
+      if(game.hintTimer<=0){
+        setSubtitle(objectiveHint(), 2.6);
+        game.hintTimer = 13 + Math.random()*6;
       }
 
       updateMonster(dt);
