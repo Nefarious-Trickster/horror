@@ -25,8 +25,8 @@ Open `http://localhost:8000/web/`.
 7. Reach emergency elevator.
 
 ## Horror Design
-- Multi-room facility with locked doors, progressive access, and distinct wings.
+- Multi-room facility with locked doors, progressive access, distinct visual wings, and themed furniture/props.
 - Hideable locker spots and a roaming hunter behavior.
-- Suspense-first pacing with phases: Calm → Pressure → Distortion → Hunt.
-- Procedural immersive audio: low ambient musical bed, directional creaks, nearby monster footsteps, and scare stingers.
+- Suspense-first pacing with phases: Calm → Pressure → Distortion → Hunt, with contextual (not random) scare triggers.
+- Reasoned ambience audio: quiet musical bed + location-based machinery/intercom sounds + nearby monster footsteps + scare stingers.
 - Minimal on-screen UI: objective + lore/log subtitles only.
