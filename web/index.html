@@ -18,6 +18,13 @@
       background:rgba(5,8,14,.42); padding:6px 8px; border-radius:7px;
       border:1px solid rgba(70,90,120,.38);
     }
+    #subtitle {
+      position:fixed; left:50%; bottom:5%; transform:translateX(-50%);
+      color:#dbe6ff; font-size:.95rem; text-shadow:0 2px 10px #000;
+      background:rgba(4,8,14,.55); border:1px solid rgba(80,100,130,.45); border-radius:9px;
+      padding:8px 12px; min-width:240px; text-align:center;
+      pointer-events:none; display:none;
+    }
     #start {
       position:fixed; inset:0; display:grid; place-items:center; z-index:20;
       background:radial-gradient(circle at 50% 20%, rgba(30,35,54,.45), rgba(1,2,6,.95));
@@ -54,6 +61,7 @@
   <canvas id="game" width="1365" height="768"></canvas>
   <div id="fade"></div>
   <div id="objective"></div>
+  <div id="subtitle"></div>
 
   <section id="start">
     <div class="card">
@@ -71,6 +79,7 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const objectiveEl = document.getElementById('objective');
+    const subtitleEl = document.getElementById('subtitle');
     const startEl = document.getElementById('start');
     const scareEl = document.getElementById('scare');
     const keys = new Set();
@@ -116,6 +125,7 @@
       x:1.5, y:1.5, a:0,
       running:false, won:false, dead:false,
       message:'', msgTimer:0,
+      subtitle:'', subtitleTimer:0,
       objective:'Find the service key.',
       phase:0, // 0 Calm, 1 Pressure, 2 Distortion, 3 Hunt
       tension:8,
@@ -171,29 +181,50 @@
     initPoints();
 
     // Audio
-    let audioCtx, master, drone, droneGain, pulse, pulseGain;
+    let audioCtx, master, droneGain, pulseGain, musicTimer=0;
     function initAudio(){
       if(audioCtx) return;
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      master = audioCtx.createGain(); master.gain.value = 0.25; master.connect(audioCtx.destination);
+      master = audioCtx.createGain(); master.gain.value = 0.14; master.connect(audioCtx.destination);
 
-      drone = audioCtx.createOscillator(); drone.type='sawtooth'; drone.frequency.value = 41;
-      droneGain = audioCtx.createGain(); droneGain.gain.value = 0.03;
-      drone.connect(droneGain).connect(master); drone.start();
+      const lp = audioCtx.createBiquadFilter();
+      lp.type='lowpass'; lp.frequency.value = 360;
+      lp.Q.value = 0.4;
+      lp.connect(master);
 
-      pulse = audioCtx.createOscillator(); pulse.type='triangle'; pulse.frequency.value=1.2;
-      pulseGain = audioCtx.createGain(); pulseGain.gain.value=0.003;
-      pulse.connect(pulseGain).connect(master); pulse.start();
+      const drone1 = audioCtx.createOscillator(); drone1.type='sine'; drone1.frequency.value = 43;
+      const drone2 = audioCtx.createOscillator(); drone2.type='triangle'; drone2.frequency.value = 64.5;
+      droneGain = audioCtx.createGain(); droneGain.gain.value = 0.015;
+      drone1.connect(droneGain); drone2.connect(droneGain); droneGain.connect(lp);
+      drone1.start(); drone2.start();
+
+      pulseGain = audioCtx.createGain(); pulseGain.gain.value = 0.0025;
+      const pulse = audioCtx.createOscillator(); pulse.type='sine'; pulse.frequency.value=0.23;
+      pulse.connect(pulseGain).connect(lp); pulse.start();
 
       setInterval(()=>{
         if(!game.running || game.dead || game.won) return;
-        if(Math.random() < 0.14 + game.phase*0.08){
-          playNoiseBurst(0.14 + game.phase*0.08, (Math.random()-0.5)*0.8);
+        if(Math.random() < 0.1 + game.phase*0.06){
+          playNoiseBurst(0.02 + game.phase*0.025, (Math.random()-0.5)*0.9);
         }
-      }, 1250);
+      }, 1600);
     }
 
-    function playNoiseBurst(level=0.1, pan=0){
+    function playTone(freq=220,dur=0.6,gain=0.02,pan=0,type='sine'){
+      if(!audioCtx) return;
+      const o=audioCtx.createOscillator();
+      const g=audioCtx.createGain();
+      const p=audioCtx.createStereoPanner();
+      o.type=type; o.frequency.value=freq;
+      g.gain.setValueAtTime(0.0001,audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(gain,audioCtx.currentTime+0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+dur);
+      p.pan.value=pan;
+      o.connect(g).connect(p).connect(master);
+      o.start(); o.stop(audioCtx.currentTime+dur+0.02);
+    }
+
+    function playNoiseBurst(level=0.03, pan=0){
       if(!audioCtx) return;
       const src=audioCtx.createBufferSource();
       const dur=0.22;
@@ -243,6 +274,12 @@
     }
 
     function setMessage(text, t=2){ game.message=text; game.msgTimer=t; }
+    function setSubtitle(text, t=3.2){
+      game.subtitle=text;
+      game.subtitleTimer=t;
+      subtitleEl.style.display='block';
+      subtitleEl.textContent=text;
+    }
 
     function castRay(a){
       const si=Math.sin(a), co=Math.cos(a);
@@ -416,7 +453,7 @@
       const near=(p,d=1.15)=>Math.hypot(p.x-game.x,p.y-game.y)<d;
 
       const note=points.notes.find(n=>!n.got&&near(n));
-      if(note){ note.got=true; game.inventory.notes++; setMessage(note.text,4.4); return; }
+      if(note){ note.got=true; game.inventory.notes++; setSubtitle(note.text,4.6); setMessage('Note logged.',1.2); return; }
 
       const key=points.key;
       if(key && !key.got && near(key)){ key.got=true; game.inventory.key=true; game.objective='Open Bulkhead A.'; setMessage('Service key acquired.',2); return; }
@@ -429,7 +466,7 @@
       }
 
       const cass=points.cassette;
-      if(cass && !cass.got && near(cass)){ cass.got=true; game.inventory.cassette=true; game.objective='Power generator in pump hall.'; setMessage('Patient cassette recovered.',2.3); return; }
+      if(cass && !cass.got && near(cass)){ cass.got=true; game.inventory.cassette=true; game.objective='Power generator in pump hall.'; setSubtitle('Cassette Transcript: "Subject still hears footsteps in sealed rooms."',4.8); setMessage('Patient cassette recovered.',2.3); return; }
 
       const gen=points.generator;
       if(gen && near(gen,1.2)){
@@ -465,6 +502,15 @@
       playScare();
       setMessage(text,2.3);
       setTimeout(()=>scareEl.style.display='none',dur);
+    }
+
+    function playMonsterStep(x,y){
+      if(!audioCtx) return;
+      const g = posGain(x,y,14);
+      if(g < 0.03) return;
+      const pan = posPan(x,y);
+      playTone(72 + Math.random()*18, 0.14, 0.012 + g*0.04, pan*0.85, 'triangle');
+      playNoiseBurst(0.008 + g*0.03, pan*0.7);
     }
 
     function passableCell(x,y){
@@ -507,6 +553,7 @@
 
       if(m.stepTimer<=0){
         m.stepTimer = game.phase>=3?0.22:0.4;
+        playMonsterStep(m.x,m.y);
         let target = null;
         if(!game.hide && (game.phase>=2 || game.noise>45)){
           target = bfsStep(mx,my,px,py);
@@ -543,6 +590,7 @@
 
       game.scareCooldown=Math.max(0,game.scareCooldown-dt);
       game.msgTimer=Math.max(0,game.msgTimer-dt);
+      game.subtitleTimer=Math.max(0,game.subtitleTimer-dt);
 
       if(game.hide){
         game.noise=Math.max(0,game.noise-36*dt);
@@ -584,8 +632,23 @@
 
       // ambience modulation
       if(droneGain){
-        droneGain.gain.value = 0.028 + game.phase*0.015 + game.tension*0.0009;
-        pulseGain.gain.value = 0.003 + game.phase*0.01;
+        droneGain.gain.value = 0.011 + game.phase*0.008 + game.tension*0.00035;
+        pulseGain.gain.value = 0.0015 + game.phase*0.004;
+      }
+
+      // sparse musical stabs (minor palette) for dread mood
+      musicTimer -= dt;
+      if(audioCtx && musicTimer <= 0){
+        const root = 110;
+        const scale = [0,3,7,10,12,15];
+        const step = scale[Math.floor(Math.random()*scale.length)];
+        const freq = root * (2 ** (step/12));
+        const pan = (Math.random()-0.5)*0.7;
+        playTone(freq, 0.7 + Math.random()*0.7, 0.008 + game.phase*0.004, pan, 'sine');
+        if(game.phase>=2 && Math.random()<0.45){
+          playTone(freq*0.5, 0.45, 0.006 + game.phase*0.003, -pan*0.6, 'triangle');
+        }
+        musicTimer = 2.2 + Math.random()*2.8 - game.phase*0.25;
       }
 
       // Story beats by room / state
@@ -607,6 +670,8 @@
 
     function renderUI(){
       objectiveEl.textContent = game.objective;
+      if(game.subtitleTimer>0){ subtitleEl.style.display='block'; subtitleEl.textContent=game.subtitle; }
+      else { subtitleEl.style.display='none'; }
 
       // auto-update objective by progress
       if(!game.inventory.key) game.objective='Find the service key.';

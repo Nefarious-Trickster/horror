@@ -28,5 +28,5 @@ Open `http://localhost:8000/web/`.
 - Multi-room facility with locked doors, progressive access, and distinct wings.
 - Hideable locker spots and a roaming hunter behavior.
 - Suspense-first pacing with phases: Calm → Pressure → Distortion → Hunt.
-- Procedural immersive audio: ambient hull drone, directional creaks, footsteps, and scare stingers.
-- Minimal on-screen UI: objective + subtitles only.
+- Procedural immersive audio: low ambient musical bed, directional creaks, nearby monster footsteps, and scare stingers.
+- Minimal on-screen UI: objective + lore/log subtitles only.
