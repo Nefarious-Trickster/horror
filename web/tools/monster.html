@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Creature viewer</title>
+<style>html,body{margin:0;background:#111;overflow:hidden}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
+</head><body>
+<script type="module">
+// Dev tool: inspect the creature rig/animation. ?mode=walk|run|still|search|scream|attack&az=deg&el=deg&dist=m&t=sec
+import * as THREE from 'three';
+import { generateTexture } from '../js/gfx/texgen.js';
+import { MonsterModel } from '../js/entities/monsterModel.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight);
+r.toneMapping = THREE.ACESFilmicToneMapping; r.shadowMap.enabled = true; document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x15181a);
+const cam = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.05, 50);
+const mk = (d, srgb) => { const t = new THREE.DataTexture(d.data, d.size, d.size); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+const sk = generateTexture({ recipe: 'skin', size: 512, seed: 25 });
+const fab = generateTexture({ recipe: 'fabric', size: 256, seed: 46, opt: { base: 0x9fb0b4, blood: 1 } });
+const tex = (o) => ({ map: mk({ data: o.albedo, size: o.size }, true), normalMap: mk({ data: o.normal, size: o.size }), orm: mk({ data: o.orm, size: o.size }) });
+const T = { skin: tex(sk), fabricGown: tex(fab) };
+const lib = {};
+lib.monsterSkin = new THREE.MeshPhysicalMaterial({ map: T.skin.map, normalMap: T.skin.normalMap, roughnessMap: T.skin.orm, roughness: 1, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.35, sheen: 0.3, sheenColor: new THREE.Color(0x553333), color: q.get('skin') ? Number(q.get('skin')) : 0xbab3a8 });
+lib.monsterSkin.normalScale.set(1.6, 1.6);
+lib.teeth = new THREE.MeshPhysicalMaterial({ color: 0xcfc4a2, roughness: 0.25, clearcoat: 0.9 });
+lib.gums = new THREE.MeshPhysicalMaterial({ color: 0x3a0909, roughness: 0.25, clearcoat: 1 });
+lib.nail = new THREE.MeshPhysicalMaterial({ color: 0x2b2620, roughness: 0.3, clearcoat: 0.7 });
+lib.gown = new THREE.MeshStandardMaterial({ map: T.fabricGown.map, side: THREE.DoubleSide });
+const M = new MonsterModel({ get: (n) => lib[n] });
+scene.add(M.root);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x333333 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+scene.add(new THREE.HemisphereLight(0x8899aa, 0x222222, 0.6));
+const key = new THREE.DirectionalLight(0xffeedd, 2.5); key.position.set(3, 5, 4); key.castShadow = true; scene.add(key);
+const rim = new THREE.DirectionalLight(0x88aaff, 1.5); rim.position.set(-3, 3, -4); scene.add(rim);
+const mode = q.get('mode') || 'walk';
+const speed = mode === 'run' ? 4 : mode === 'walk' ? 1.3 : 0;
+const az = (q.get('az') ?? 30) * Math.PI / 180, el = (q.get('el') ?? 10) * Math.PI / 180, dist = +(q.get('dist') ?? 4.5), ty = +(q.get('ty') ?? 1.3);
+let t = 0; const T0 = +(q.get('t') ?? 1.5);
+// simulate
+for (let i = 0; i < T0 * 60; i++) { M.root.position.z += speed / 60; M.update(1 / 60, speed, mode, M.root); }
+cam.position.set(M.root.position.x + Math.sin(az) * Math.cos(el) * dist, ty + Math.sin(el) * dist, M.root.position.z + Math.cos(az) * Math.cos(el) * dist);
+cam.lookAt(M.root.position.x, ty, M.root.position.z);
+r.render(scene, cam);
+window.ready = true;
+</script></body></html>

@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pressure Census</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin:0; overflow:hidden; background:#020306; font-family: Inter, system-ui, sans-serif; }
+    canvas { display:block; width:100vw; height:100vh; }
+    #fade {
+      position:fixed; inset:0; pointer-events:none;
+      background:radial-gradient(circle at 50% 50%, transparent 38%, rgba(0,0,0,.72) 90%);
+    }
+    #objective {
+      position:fixed; left:10px; top:10px; color:#b8c6df; font-size:.86rem;
+      text-shadow:0 1px 6px #000; pointer-events:none;
+      background:rgba(5,8,14,.42); padding:6px 8px; border-radius:7px;
+      border:1px solid rgba(70,90,120,.38);
+    }
+    #subtitle {
+      position:fixed; left:50%; bottom:5%; transform:translateX(-50%);
+      color:#dbe6ff; font-size:.95rem; text-shadow:0 2px 10px #000;
+      background:rgba(4,8,14,.55); border:1px solid rgba(80,100,130,.45); border-radius:9px;
+      padding:8px 12px; min-width:240px; text-align:center;
+      pointer-events:none; display:none;
+    }
+    #start {
+      position:fixed; inset:0; display:grid; place-items:center; z-index:20;
+      background:radial-gradient(circle at 50% 20%, rgba(30,35,54,.45), rgba(1,2,6,.95));
+      color:#e7eefc;
+    }
+    .card {
+      width:min(780px,92vw); background:rgba(8,12,20,.88); border:1px solid #3d4d67;
+      border-radius:12px; padding:16px;
+    }
+    .card h1 { margin:0 0 8px; }
+    .card p { margin:7px 0; color:#c9d4e9; }
+    .card button {
+      margin-top:10px; pointer-events:auto; padding:9px 14px;
+      border:1px solid #4b6389; background:#1a2943; color:#f2f6ff; border-radius:8px; cursor:pointer;
+    }
+    #scare {
+      position:fixed; inset:0; display:none; place-items:center; z-index:30;
+      background:rgba(0,0,0,.8);
+    }
+    #scareFace {
+      width:min(62vmin,560px); aspect-ratio:1/1; border-radius:50%;
+      background:
+        radial-gradient(circle at 34% 34%, #fff 0 3%, #5c0404 4% 7%, transparent 8%),
+        radial-gradient(circle at 66% 34%, #fff 0 3%, #5c0404 4% 7%, transparent 8%),
+        radial-gradient(circle at 50% 60%, #200 0 10%, transparent 11%),
+        radial-gradient(circle at 50% 50%, #b41515 0%, #330404 64%, #000 84%);
+      box-shadow:0 0 160px rgba(200,20,20,.75);
+      animation:shake .055s infinite alternate;
+    }
+    @keyframes shake { from { transform:translate(-3px,-2px) scale(1.01);} to{ transform:translate(3px,2px) scale(1);} }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="1365" height="768"></canvas>
+  <div id="fade"></div>
+  <div id="objective"></div>
+  <div id="subtitle"></div>
+
+  <section id="start">
+    <div class="card">
+      <h1>Pressure Census</h1>
+      <p>Iron lung depth. Doors-like dread. You are trapped in Block 13 under a city reservoir.</p>
+      <p>Story objective: boot life support, restore bulkheads, recover the patient cassette, reach the emergency lift.</p>
+      <p>Controls: WASD move, mouse look, E interact, Shift quiet sprint, Space hide/unhide (near lockers).</p>
+      <button id="startBtn">Begin Descent</button>
+    </div>
+  </section>
+
+  <section id="scare"><div id="scareFace"></div></section>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const objectiveEl = document.getElementById('objective');
+    const subtitleEl = document.getElementById('subtitle');
+    const startEl = document.getElementById('start');
+    const scareEl = document.getElementById('scare');
+    const keys = new Set();
+
+    const FOV = Math.PI/3;
+    const RAYS = 360;
+    const MAX_DIST = 34;
+
+    // # wall, S spawn, L locker hide, N note, K key, C cassette, G generator, E elevator, A/B bulkhead doors
+    const MAP = [
+      '########################################',
+      '#S....#.........#.........N....#....#..#',
+      '#.##..#.#####.#.#.#######.###.#.##.#..##',
+      '#....##.....#.#.#.#.....#...#.#..#.#..##',
+      '####....###.#.#.#.#.###.###.#.##.#.##.##',
+      '#..#....#...#.#.#...#.#...#.#..#....#.##',
+      '#..#.####.###.#.#####.###.#.##.######..#',
+      '#..#......#...#.....#...#.#...#....#...#',
+      '##.#.######.#######.###.#.###.#.##.#.###',
+      '#..#....#...#.....#..A..#...#.#.#..#...#',
+      '#.####.#.###.#.#.#####.###.#.#.#.####..#',
+      '#.#..N.#...#.#.#.....#...#.#.#.#....#..#',
+      '#.#.####.#.#.#.#####.###.#.#.#.####.#..#',
+      '#.#....#.#...#...#...#...#...#..#...#..#',
+      '#.####.#.#######.#.###.########.#.###.##',
+      '#....#.#.......#.#...#....L...#.#.....##',
+      '####.#.#######.#.###.#####.##.#.#####..#',
+      '#..K...#.....#.#...#.....#.#..#.....#..#',
+      '#.######.###.#.###.#####.#.#.####.#.#..E',
+      '#....#...#.#.#...#.#...#.#.#....#.#.#..#',
+      '####.#.###.#.###.#.#.#.#.#.####.#.#.##.#',
+      '#..#.#...#...#...#.#.#...#...#...#....##',
+      '#.#.#.###.###.#.###.#.#####.#.#######..#',
+      '#.#...#..N....#...#.#...#...#.....#....#',
+      '#.#####.#########.#.###.#.#######.#.##.#',
+      '#.....#...B.....#.#...#.#...#.....#....#',
+      '#.###.#########.#.###.#.###.#.#####.##.#',
+      '#...#.....L.....#..G..#..C..#..N.......#',
+      '########################################'
+    ];
+
+    const game = {
+      x:1.5, y:1.5, a:0,
+      running:false, won:false, dead:false,
+      message:'', msgTimer:0,
+      subtitle:'', subtitleTimer:0,
+      objective:'Find the service key.',
+      phase:0, // 0 Calm, 1 Pressure, 2 Distortion, 3 Hunt
+      tension:8,
+      noise:0,
+      repetition:0,
+      lastCell:'',
+      footsteps:0,
+      hide:false,
+      hideSpot:null,
+      inventory:{ key:false, cassette:false, notes:0, records:0, generator:false },
+      doors:{ A:false, B:false },
+      scareCooldown:2,
+      scareCount:0,
+      zones:new Set(),
+      progressStamp:0,
+      hintTimer:14,
+      ambienceTimer:2.5,
+      monster:{ x:20.5, y:24.5, tx:20.5, ty:24.5, stepTimer:0, hear:0 }
+    };
+
+    const points = { notes:[], lockers:[], key:null, cassette:null, generator:null, elevator:null, bulkheadA:null, bulkheadB:null, decor:[] };
+
+    function cellAt(x,y){
+      const gx=Math.floor(x), gy=Math.floor(y);
+      if(gy<0||gy>=MAP.length||gx<0||gx>=MAP[0].length) return '#';
+      return MAP[gy][gx];
+    }
+
+    function isDoorClosed(c){
+      if(c==='A') return !game.doors.A;
+      if(c==='B') return !game.doors.B;
+      return false;
+    }
+
+    function isWall(x,y){
+      const c = cellAt(x,y);
+      return c==='#' || isDoorClosed(c);
+    }
+
+    function initPoints(){
+      for(let y=0;y<MAP.length;y++) for(let x=0;x<MAP[0].length;x++){
+        const c=MAP[y][x];
+        if(c==='S'){ game.x=x+.5; game.y=y+.5; }
+        if(c==='N') points.notes.push({x:x+.5,y:y+.5,got:false,text:[
+          'Log: Reservoir pressure dropped after hearing your voice over intercom.',
+          'Log: Patients disappear when bulkhead B is opened after midnight.',
+          'Log: Do not hide too long. It waits outside lockers.'
+        ][points.notes.length%3]});
+        if(c==='L') points.lockers.push({x:x+.5,y:y+.5,occupied:false});
+        if(c==='K') points.key={x:x+.5,y:y+.5,got:false};
+        if(c==='C') points.cassette={x:x+.5,y:y+.5,got:false};
+        if(c==='G') points.generator={x:x+.5,y:y+.5,on:false};
+        if(c==='E') points.elevator={x:x+.5,y:y+.5};
+        if(c==='A') points.bulkheadA={x:x+.5,y:y+.5};
+        if(c==='B') points.bulkheadB={x:x+.5,y:y+.5};
+      }
+    }
+    initPoints();
+
+    // thematic furniture/decoration anchors
+    points.decor = [
+      {x:6.5,y:6.5,type:'bed'}, {x:8.5,y:6.5,type:'bed'}, {x:13.5,y:14.5,type:'chair'},
+      {x:28.5,y:4.5,type:'cabinet'}, {x:30.5,y:5.5,type:'cabinet'}, {x:5.5,y:22.5,type:'pipe'},
+      {x:18.5,y:20.5,type:'pipe'}, {x:24.5,y:24.5,type:'gurney'}, {x:33.5,y:16.5,type:'chair'},
+      {x:36.5,y:26.5,type:'cabinet'}, {x:21.5,y:27.5,type:'gurney'}
+    ];
+
+    // Audio
+    let audioCtx, master, droneGain, pulseGain, musicTimer=0;
+    function initAudio(){
+      if(audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      master = audioCtx.createGain(); master.gain.value = 0.11; master.connect(audioCtx.destination);
+
+      const lp = audioCtx.createBiquadFilter();
+      lp.type='lowpass'; lp.frequency.value = 360;
+      lp.Q.value = 0.4;
+      lp.connect(master);
+
+      const drone1 = audioCtx.createOscillator(); drone1.type='sine'; drone1.frequency.value = 43;
+      const drone2 = audioCtx.createOscillator(); drone2.type='triangle'; drone2.frequency.value = 64.5;
+      droneGain = audioCtx.createGain(); droneGain.gain.value = 0.015;
+      drone1.connect(droneGain); drone2.connect(droneGain); droneGain.connect(lp);
+      drone1.start(); drone2.start();
+
+      pulseGain = audioCtx.createGain(); pulseGain.gain.value = 0.0025;
+      const pulse = audioCtx.createOscillator(); pulse.type='sine'; pulse.frequency.value=0.23;
+      pulse.connect(pulseGain).connect(lp); pulse.start();
+    }
+
+    function playTone(freq=220,dur=0.6,gain=0.02,pan=0,type='sine'){
+      if(!audioCtx) return;
+      const o=audioCtx.createOscillator();
+      const g=audioCtx.createGain();
+      const p=audioCtx.createStereoPanner();
+      o.type=type; o.frequency.value=freq;
+      g.gain.setValueAtTime(0.0001,audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(gain,audioCtx.currentTime+0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+dur);
+      p.pan.value=pan;
+      o.connect(g).connect(p).connect(master);
+      o.start(); o.stop(audioCtx.currentTime+dur+0.02);
+    }
+
+    function playNoiseBurst(level=0.03, pan=0){
+      if(!audioCtx) return;
+      const src=audioCtx.createBufferSource();
+      const dur=0.22;
+      const buf=audioCtx.createBuffer(1, audioCtx.sampleRate*dur, audioCtx.sampleRate);
+      const data=buf.getChannelData(0);
+      for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/(data.length*0.25));
+      src.buffer=buf;
+      const g=audioCtx.createGain(); g.gain.value=level;
+      const p=audioCtx.createStereoPanner(); p.pan.value=pan;
+      src.connect(g).connect(p).connect(master);
+      src.start();
+    }
+
+    function posPan(x,y){
+      const dx=x-game.x, dy=y-game.y;
+      const ang = Math.atan2(dy,dx)-game.a;
+      let a=ang; while(a>Math.PI)a-=Math.PI*2; while(a<-Math.PI)a+=Math.PI*2;
+      return Math.max(-1,Math.min(1,a/(Math.PI/2)));
+    }
+
+    function posGain(x,y,max=18){
+      const d=Math.hypot(x-game.x,y-game.y);
+      return Math.max(0,1-d/max);
+    }
+
+    function playFoot(){
+      if(!audioCtx) return;
+      const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); const p=audioCtx.createStereoPanner();
+      o.type='square'; o.frequency.value=84+Math.random()*20;
+      g.gain.setValueAtTime(0.0001,audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.009,audioCtx.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08);
+      p.pan.value=(Math.random()-0.5)*0.2;
+      o.connect(g).connect(p).connect(master); o.start(); o.stop(audioCtx.currentTime+0.09);
+    }
+
+    function playScare(){
+      if(!audioCtx) return;
+      const o=audioCtx.createOscillator(); const g=audioCtx.createGain();
+      o.type='sawtooth';
+      o.frequency.setValueAtTime(240,audioCtx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(38,audioCtx.currentTime+0.5);
+      g.gain.setValueAtTime(0.0001,audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.22,audioCtx.currentTime+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.55);
+      o.connect(g).connect(master); o.start(); o.stop(audioCtx.currentTime+0.56);
+    }
+
+    function setMessage(text, t=2){ game.message=text; game.msgTimer=t; }
+    function setSubtitle(text, t=3.2){
+      game.subtitle=text;
+      game.subtitleTimer=t;
+      subtitleEl.style.display='block';
+      subtitleEl.textContent=text;
+    }
+
+    function castRay(a){
+      const si=Math.sin(a), co=Math.cos(a);
+      for(let d=0; d<MAX_DIST; d+=0.025){
+        const x=game.x+co*d, y=game.y+si*d;
+        if(isWall(x,y)) return {d,x,y,c:cellAt(x,y)};
+      }
+      return {d:MAX_DIST,x:game.x+co*MAX_DIST,y:game.y+si*MAX_DIST,c:'#'};
+    }
+
+    function wallColor(hit, dist){
+      const fx=hit.x-Math.floor(hit.x), fy=hit.y-Math.floor(hit.y);
+      const stripe=Math.sin((fx*21.0 + fy*9.0) * Math.PI)*0.08;
+      const grout=Math.sin((fx*4.0) * Math.PI)*0.05 + Math.sin((fy*4.0)*Math.PI)*0.05;
+      const grime=Math.sin((hit.x*2.2+hit.y*1.4)*3.6)*0.08;
+      const base=Math.max(0.10,1-dist/17.5) + stripe + grime + grout;
+
+      const ward = hit.y < 9;
+      const pump = hit.y > 20;
+      const archive = hit.x > 26 && hit.y > 14;
+
+      if(hit.c==='A' || hit.c==='B') return [92*base, 74*base, 52*base];
+      if(ward) return [88*base, 98*base, 126*base];
+      if(pump) return [72*base, 92*base, 84*base];
+      if(archive) return [94*base, 74*base, 92*base];
+      return [74*base, 94*base, 124*base];
+    }
+
+    function drawSpriteSet(arr, kind){
+      const w=canvas.width,h=canvas.height;
+      for(const s of arr){
+        const dx=s.x-game.x, dy=s.y-game.y;
+        const dist=Math.hypot(dx,dy);
+        let ang=Math.atan2(dy,dx)-game.a;
+        while(ang>Math.PI) ang-=Math.PI*2; while(ang<-Math.PI) ang+=Math.PI*2;
+        if(Math.abs(ang)>FOV/1.8) continue;
+
+        const wall=castRay(game.a+ang);
+        if(wall.d<dist) continue;
+
+        const size=(h/Math.max(0.35,dist))*0.28;
+        const sx=(ang/(FOV/2))*(w/2)+w/2-size/2;
+        const sy=h/2-size*0.55;
+
+        if(kind==='note'){
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size);
+          g.addColorStop(0,'#d7e3ff'); g.addColorStop(1,'#a8b5d8');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size*0.82,size*0.98);
+          ctx.fillStyle='rgba(50,68,110,.75)';
+          for(let i=0;i<4;i++) ctx.fillRect(sx+size*0.1,sy+size*(0.16+i*0.14),size*0.6,size*0.05);
+        }else if(kind==='record'){
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size);
+          g.addColorStop(0,'#7f1a24'); g.addColorStop(1,'#4e0d14');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size*0.88,size*1.02);
+          ctx.fillStyle='#f3e8d8'; ctx.fillRect(sx+size*0.12,sy+size*0.18,size*0.64,size*0.08);
+          ctx.fillStyle='rgba(20,0,0,.3)'; ctx.fillRect(sx+size*0.08,sy+size*0.08,size*0.75,size*0.92);
+        }else if(kind==='key'){
+          ctx.fillStyle='#f4c96d'; ctx.beginPath(); ctx.arc(sx+size*0.43,sy+size*0.50,size*0.24,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='#83591b'; ctx.fillRect(sx+size*0.36,sy+size*0.27,size*0.18,size*0.52);
+          ctx.fillStyle='#f1d48f'; ctx.fillRect(sx+size*0.50,sy+size*0.48,size*0.16,size*0.07);
+        }else if(kind==='gen-off' || kind==='gen-on'){
+          const on = kind==='gen-on';
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size);
+          g.addColorStop(0,on?'#7bffc0':'#6f8e88'); g.addColorStop(1,on?'#3cb26d':'#435a56');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size,size*0.98);
+          ctx.fillStyle=on?'rgba(190,255,220,.8)':'rgba(20,28,30,.6)'; ctx.fillRect(sx+size*0.16,sy+size*0.18,size*0.68,size*0.46);
+          ctx.fillStyle='rgba(8,12,16,.45)'; ctx.fillRect(sx+size*0.1,sy+size*0.72,size*0.8,size*0.08);
+        }else if(kind==='cassette'){
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size);
+          g.addColorStop(0,'#262f43'); g.addColorStop(1,'#141a28');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size*1.02,size*0.68);
+          ctx.fillStyle='#d5dced'; ctx.fillRect(sx+size*0.12,sy+size*0.14,size*0.76,size*0.3);
+          ctx.fillStyle='#1a2233'; ctx.beginPath(); ctx.arc(sx+size*0.34,sy+size*0.29,size*0.1,0,Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx+size*0.68,sy+size*0.29,size*0.1,0,Math.PI*2); ctx.fill();
+        }else if(kind==='locker'){
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size*1.22);
+          g.addColorStop(0,'#6785aa'); g.addColorStop(1,'#3e536b');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size*0.9,size*1.24);
+          ctx.fillStyle='rgba(230,244,255,.35)'; ctx.fillRect(sx+size*0.18,sy+size*0.3,size*0.1,size*0.43);
+          ctx.fillStyle='rgba(15,22,34,.4)'; ctx.fillRect(sx+size*0.07,sy+size*0.08,size*0.76,size*1.05);
+        }else if(kind==='elevator'){
+          const ready=(game.inventory.cassette&&game.inventory.generator&&game.inventory.records>=3);
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size*1.3);
+          g.addColorStop(0,ready?'#d8a1ff':'#6b647f'); g.addColorStop(1,ready?'#7a3eb0':'#3f3b4e');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size,size*1.3);
+          ctx.fillStyle='rgba(235,245,255,.32)'; ctx.fillRect(sx+size*0.16,sy+size*0.2,size*0.68,size*0.18);
+          ctx.fillStyle='rgba(10,12,18,.35)'; ctx.fillRect(sx+size*0.08,sy+size*0.45,size*0.82,size*0.72);
+        }else if(kind==='decor-bed'){
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size*0.6);
+          g.addColorStop(0,'#6b7488'); g.addColorStop(1,'#3a4458');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy+size*0.25,size*1.1,size*0.42);
+          ctx.fillStyle='#98a5bf'; ctx.fillRect(sx+size*0.08,sy+size*0.28,size*0.42,size*0.14);
+        }else if(kind==='decor-chair'){
+          ctx.fillStyle='#4f5f7e'; ctx.fillRect(sx+size*0.25,sy+size*0.2,size*0.36,size*0.36);
+          ctx.fillRect(sx+size*0.3,sy+size*0.56,size*0.08,size*0.28);
+          ctx.fillRect(sx+size*0.48,sy+size*0.56,size*0.08,size*0.28);
+        }else if(kind==='decor-cabinet'){
+          const g=ctx.createLinearGradient(sx,sy,sx,sy+size*1.0);
+          g.addColorStop(0,'#566a80'); g.addColorStop(1,'#314154');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size*0.9,size*1.1);
+          ctx.fillStyle='rgba(220,230,250,.25)'; ctx.fillRect(sx+size*0.12,sy+size*0.22,size*0.14,size*0.46);
+        }else if(kind==='decor-pipe'){
+          ctx.fillStyle='#6a7b6c'; ctx.fillRect(sx+size*0.1,sy+size*0.4,size*0.85,size*0.16);
+          ctx.fillStyle='#39463b'; ctx.fillRect(sx+size*0.5,sy+size*0.22,size*0.12,size*0.5);
+        }else if(kind==='decor-gurney'){
+          ctx.fillStyle='#657994'; ctx.fillRect(sx,sy+size*0.28,size*1.1,size*0.28);
+          ctx.fillStyle='#2f3b4a'; ctx.fillRect(sx+size*0.08,sy+size*0.56,size*0.08,size*0.18);
+          ctx.fillRect(sx+size*0.9,sy+size*0.56,size*0.08,size*0.18);
+        }else if(kind==='monster'){
+          const g=ctx.createRadialGradient(sx+size*0.5,sy+size*0.45,size*0.12,sx+size*0.5,sy+size*0.45,size*0.65);
+          g.addColorStop(0,'rgba(255,110,110,.9)'); g.addColorStop(1,'rgba(140,15,20,.74)');
+          ctx.fillStyle=g; ctx.fillRect(sx,sy,size*0.98,size*1.18);
+        }
+      }
+    }
+
+    function draw(){
+      const w=canvas.width,h=canvas.height;
+      const f=0.9+Math.sin(performance.now()*0.003+game.phase)*0.08;
+      const ceilGrad=ctx.createLinearGradient(0,0,0,h/2);
+      ceilGrad.addColorStop(0,`rgb(${16*f},${20*f},${33*f})`);
+      ceilGrad.addColorStop(1,`rgb(${10*f},${12*f},${18*f})`);
+      ctx.fillStyle=ceilGrad; ctx.fillRect(0,0,w,h/2);
+
+      const floorGrad=ctx.createLinearGradient(0,h/2,0,h);
+      floorGrad.addColorStop(0,`rgb(${12*f},${10*f},${12*f})`);
+      floorGrad.addColorStop(1,`rgb(${6*f},${5*f},${7*f})`);
+      ctx.fillStyle=floorGrad; ctx.fillRect(0,h/2,w,h/2);
+
+      for(let i=0;i<80;i++){
+        const px=(i*97 + performance.now()*0.01)%w;
+        const py=h/2 + (i*53 % (h/2));
+        ctx.fillStyle='rgba(50,58,78,0.07)';
+        ctx.fillRect(px,py,2,2);
+      }
+
+      for(let i=0;i<RAYS;i++){
+        const t=i/RAYS;
+        const ra=game.a-FOV/2+t*FOV;
+        const hit=castRay(ra);
+        const d=hit.d*Math.cos(ra-game.a);
+        const wallH=Math.min(h,(h/Math.max(0.0001,d))*0.88);
+        const x=i*(w/RAYS), y=h/2-wallH/2;
+        const [r,g,b]=wallColor(hit,d);
+        ctx.fillStyle=`rgb(${r},${g},${b})`;
+        ctx.fillRect(x,y,Math.ceil(w/RAYS)+1,wallH);
+        if(i%13===0){ ctx.fillStyle='rgba(18,24,36,.15)'; ctx.fillRect(x,y,1,wallH); }
+      }
+
+      drawSpriteSet(points.notes.filter(n=>!n.got), 'note');
+      for(const d of points.decor){
+        drawSpriteSet([d], `decor-${d.type}`);
+      }
+      drawSpriteSet(points.lockers, 'locker');
+      if(points.key && !points.key.got) drawSpriteSet([points.key], 'key');
+      if(points.cassette && !points.cassette.got) drawSpriteSet([points.cassette], 'cassette');
+      if(points.generator) drawSpriteSet([points.generator], points.generator.on?'gen-on':'gen-off');
+      if(points.elevator) drawSpriteSet([points.elevator], 'elevator');
+      drawSpriteSet(points.records?.filter(r=>!r.got)||[], 'record');
+      if(game.phase>=2 && !game.hide) drawSpriteSet([game.monster], 'monster');
+      const tgt=currentTarget();
+      if(tgt) drawSpriteSet([tgt], 'note');
+
+      const fog=ctx.createRadialGradient(w/2,h/2,120,w/2,h/2,Math.max(w,h)*0.7);
+      fog.addColorStop(0,'rgba(0,0,0,0)');
+      fog.addColorStop(1,`rgba(0,0,0,${0.18 + game.phase*0.06})`);
+      ctx.fillStyle=fog;
+      ctx.fillRect(0,0,w,h);
+    }
+
+    // Records are same as previous red archives to keep objective count
+    points.records = [
+      {x:16.5,y:11.5,got:false},{x:34.5,y:27.5,got:false},{x:11.5,y:27.5,got:false}
+    ];
+
+    function canMove(nx,ny){
+      const p=.15;
+      return !isWall(nx-p,ny-p)&&!isWall(nx+p,ny-p)&&!isWall(nx-p,ny+p)&&!isWall(nx+p,ny+p);
+    }
+
+    function nearestLocker(){
+      let best=null;
+      for(const l of points.lockers){
+        const d=Math.hypot(l.x-game.x,l.y-game.y);
+        if(d<1.0 && (!best || d<best.d)) best={l,d};
+      }
+      return best?.l || null;
+    }
+
+    function toggleHide(){
+      if(game.dead||game.won) return;
+      if(game.hide){
+        game.hide=false; game.hideSpot=null; setMessage('You step out of the locker.',1.5); return;
+      }
+      const l=nearestLocker();
+      if(!l){ setMessage('No hiding place nearby.',1); return; }
+      game.hide=true; game.hideSpot=l; setMessage('Holding breath... stay still.',2);
+    }
+
+    function interact(){
+      if(game.dead||game.won||game.hide) return;
+      const near=(p,d=1.15)=>Math.hypot(p.x-game.x,p.y-game.y)<d;
+
+      const note=points.notes.find(n=>!n.got&&near(n));
+      if(note){ note.got=true; game.inventory.notes++; setSubtitle(note.text,4.6); setMessage('Note logged.',1.2); return; }
+
+      const key=points.key;
+      if(key && !key.got && near(key)){ key.got=true; game.inventory.key=true; game.objective='Open Bulkhead A.'; setMessage('Service key acquired.',2); return; }
+
+      if((points.bulkheadA && Math.hypot(game.x-points.bulkheadA.x,game.y-points.bulkheadA.y)<1.4) || cellAt(game.x,game.y)==='A'){
+        if(!game.doors.A){
+          if(!game.inventory.key){ setMessage('Bulkhead A locked. Need service key.',1.8); return; }
+          game.doors.A=true; game.objective='Find cassette in lower ward.'; setMessage('Bulkhead A unsealed.',1.8); return;
+        }
+      }
+
+      const cass=points.cassette;
+      if(cass && !cass.got && near(cass)){ cass.got=true; game.inventory.cassette=true; game.objective='Power generator in pump hall.'; setSubtitle('Cassette Transcript: "Subject still hears footsteps in sealed rooms."',4.8); setMessage('Patient cassette recovered.',2.3); return; }
+
+      const gen=points.generator;
+      if(gen && near(gen,1.2)){
+        if(!game.inventory.key){ setMessage('Generator panel locked by service protocol.',1.6); return; }
+        if(!gen.on){ gen.on=true; game.inventory.generator=true; game.objective='Open Bulkhead B and retrieve red archives.'; setMessage('Generator online. Pressure rising.',2.2); game.tension+=14; runScare('Power surge in the dark.',380); return; }
+      }
+
+      if((points.bulkheadB && Math.hypot(game.x-points.bulkheadB.x,game.y-points.bulkheadB.y)<1.4) || cellAt(game.x,game.y)==='B'){
+        if(!game.doors.B){
+          if(!game.inventory.generator){ setMessage('Bulkhead B magnet lock requires generator.',1.9); return; }
+          game.doors.B=true; game.objective='Collect 3 red archives and reach elevator.'; setMessage('Bulkhead B opened.',1.8); return;
+        }
+      }
+
+      const rec=points.records.find(r=>!r.got&&near(r));
+      if(rec){ rec.got=true; game.inventory.records++; setMessage('Red archive secured.',1.7); return; }
+
+      if(points.elevator && near(points.elevator,1.2)){
+        if(game.inventory.records<3){ setMessage(`Elevator denied: ${3-game.inventory.records} archives missing.`,1.7); return; }
+        if(!game.inventory.cassette || !game.inventory.generator){ setMessage('Extraction prerequisites incomplete.',1.7); return; }
+        game.won=true; setMessage('Lift ascending. Your replacement remains below.',999);
+        return;
+      }
+
+      setMessage('Nothing useful here.',1);
+    }
+
+    function runScare(text='Something is right behind you.', dur=480){
+      if(game.scareCooldown>0) return;
+      game.scareCooldown=2.2;
+      game.scareCount++;
+      scareEl.style.display='grid';
+      playScare();
+      setMessage(text,2.3);
+      setTimeout(()=>scareEl.style.display='none',dur);
+    }
+
+    function playMonsterStep(x,y){
+      if(!audioCtx) return;
+      const g = posGain(x,y,14);
+      if(g < 0.03) return;
+      const pan = posPan(x,y);
+      playTone(72 + Math.random()*18, 0.14, 0.012 + g*0.04, pan*0.85, 'triangle');
+      playNoiseBurst(0.008 + g*0.03, pan*0.7);
+    }
+
+    function passableCell(x,y){
+      const c=cellAt(x+.5,y+.5);
+      return c!== '#' && !isDoorClosed(c);
+    }
+
+    function bfsStep(sx,sy,tx,ty){
+      const q=[[sx,sy]];
+      const seen=new Set([`${sx},${sy}`]);
+      const prev=new Map();
+      const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+      while(q.length){
+        const [x,y]=q.shift();
+        if(x===tx && y===ty) break;
+        for(const [dx,dy] of dirs){
+          const nx=x+dx, ny=y+dy, k=`${nx},${ny}`;
+          if(nx<0||ny<0||ny>=MAP.length||nx>=MAP[0].length||seen.has(k)||!passableCell(nx,ny)) continue;
+          seen.add(k); prev.set(k,`${x},${y}`); q.push([nx,ny]);
+        }
+      }
+      let cur=`${tx},${ty}`;
+      if(!prev.has(cur)) return null;
+      while(prev.get(cur)!==`${sx},${sy}`){
+        cur=prev.get(cur);
+        if(!cur) return null;
+      }
+      const [nx,ny]=cur.split(',').map(Number);
+      return {x:nx+.5,y:ny+.5};
+    }
+
+    function updateMonster(dt){
+      const m=game.monster;
+      m.stepTimer-=dt;
+      const px=Math.floor(game.x), py=Math.floor(game.y);
+      const mx=Math.floor(m.x), my=Math.floor(m.y);
+
+      const hear = game.noise*0.01 + (game.phase>=2?0.45:0.1);
+      m.hear = Math.max(0, Math.min(1, m.hear + (hear - 0.25) * dt));
+
+      if(m.stepTimer<=0){
+        m.stepTimer = game.phase>=3?0.22:0.4;
+        playMonsterStep(m.x,m.y);
+        let target = null;
+        if(!game.hide && (game.phase>=2 || game.noise>45)){
+          target = bfsStep(mx,my,px,py);
+        }
+        if(!target){
+          const choices=[[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy])=>({x:mx+dx,y:my+dy})).filter(c=>passableCell(c.x,c.y));
+          if(choices.length) {
+            const pick=choices[Math.floor(Math.random()*choices.length)];
+            target={x:pick.x+.5,y:pick.y+.5};
+          }
+        }
+        if(target){ m.tx=target.x; m.ty=target.y; }
+      }
+
+      const dx=m.tx-m.x, dy=m.ty-m.y; const dist=Math.hypot(dx,dy);
+      const speed=(game.phase>=3?2.6:1.5)*dt;
+      if(dist>0.001){ m.x += (dx/dist)*Math.min(speed,dist); m.y += (dy/dist)*Math.min(speed,dist); }
+
+      // positional sounds from monster
+      if(Math.random()<0.04*dt*60 && game.phase>=2){
+        const g = posGain(m.x,m.y,20);
+        if(g>0.03) playNoiseBurst(0.012 + g*0.045, posPan(m.x,m.y));
+      }
+
+      if(!game.hide && Math.hypot(m.x-game.x,m.y-game.y)<0.7){
+        game.dead=true;
+        runScare('It was wearing your face.', 900);
+        setMessage('STATUS: Subject replaced.',999);
+      }
+    }
+
+
+    function currentTarget(){
+      if(!game.inventory.key) return points.key;
+      if(!game.doors.A) return points.bulkheadA || {x:18.5,y:9.5};
+      if(!game.inventory.cassette) return points.cassette;
+      if(!game.inventory.generator) return points.generator;
+      if(!game.doors.B) return points.bulkheadB || {x:11.5,y:25.5};
+      if(game.inventory.records<3){
+        const next=points.records.find(r=>!r.got); if(next) return next;
+      }
+      return points.elevator;
+    }
+
+    function objectiveHint(){
+      const t=currentTarget();
+      if(!t) return '';
+      const dx=t.x-game.x, dy=t.y-game.y;
+      const dist=Math.hypot(dx,dy);
+      const dir = Math.abs(dx)>Math.abs(dy)
+        ? (dx>0?'east':'west')
+        : (dy>0?'south':'north');
+      return `Signal ping: ${dir}, ~${Math.round(dist)}m.`;
+    }
+
+    function update(dt){
+      if(!game.running || game.dead || game.won) return;
+
+      game.scareCooldown=Math.max(0,game.scareCooldown-dt);
+      game.msgTimer=Math.max(0,game.msgTimer-dt);
+      game.subtitleTimer=Math.max(0,game.subtitleTimer-dt);
+      game.hintTimer=Math.max(0,game.hintTimer-dt);
+      game.ambienceTimer=Math.max(0,game.ambienceTimer-dt);
+
+      if(game.hide){
+        game.noise=Math.max(0,game.noise-36*dt);
+        game.tension=Math.min(100,game.tension + 0.7*dt); // waiting itself is tense
+        updateMonster(dt);
+        return;
+      }
+
+      const speed=(keys.has('shift')?2.75:2.0)*dt;
+      let nx=game.x, ny=game.y; let moved=false;
+      if(keys.has('w')){ nx+=Math.cos(game.a)*speed; ny+=Math.sin(game.a)*speed; moved=true; }
+      if(keys.has('s')){ nx-=Math.cos(game.a)*speed; ny-=Math.sin(game.a)*speed; moved=true; }
+      if(keys.has('a')){ nx+=Math.cos(game.a-Math.PI/2)*speed; ny+=Math.sin(game.a-Math.PI/2)*speed; moved=true; }
+      if(keys.has('d')){ nx+=Math.cos(game.a+Math.PI/2)*speed; ny+=Math.sin(game.a+Math.PI/2)*speed; moved=true; }
+      if(canMove(nx,game.y)) game.x=nx;
+      if(canMove(game.x,ny)) game.y=ny;
+
+      const cell=`${Math.floor(game.x)},${Math.floor(game.y)}`;
+      if(cell===game.lastCell) game.repetition=Math.min(100,game.repetition+16*dt);
+      else game.repetition=Math.max(0,game.repetition-11*dt);
+      game.lastCell=cell;
+
+      const noiseDelta = moved ? (keys.has('shift')?38:16) : -26;
+      game.noise=Math.max(0,Math.min(100,game.noise + noiseDelta*dt));
+      game.tension=Math.max(0,Math.min(100,game.tension + (moved?0.8:-0.35)*dt + game.noise*0.004*dt + game.repetition*0.003*dt + (game.inventory.generator?0.22*dt:0)));
+
+      // phase pacing
+      const oldPhase=game.phase;
+      if(game.tension<22) game.phase=0;
+      else if(game.tension<48) game.phase=1;
+      else if(game.tension<75) game.phase=2;
+      else game.phase=3;
+      if(game.phase!==oldPhase){ setMessage(['Calm.','Pressure rising.','Distortion detected.','HUNT ACTIVE.'][game.phase],2.4); }
+
+      if(moved){
+        game.footsteps += dt;
+        if(game.footsteps>0.32){ game.footsteps=0; playFoot(); }
+      }
+
+      // ambience modulation
+      if(droneGain){
+        droneGain.gain.value = 0.011 + game.phase*0.008 + game.tension*0.00035;
+        pulseGain.gain.value = 0.0015 + game.phase*0.004;
+      }
+
+      // sparse musical stabs (minor palette) for dread mood
+      musicTimer -= dt;
+      if(audioCtx && musicTimer <= 0){
+        const root = 110;
+        const scale = [0,3,7,10,12,15];
+        const step = scale[Math.floor(Math.random()*scale.length)];
+        const freq = root * (2 ** (step/12));
+        const pan = (Math.random()-0.5)*0.7;
+        playTone(freq, 0.9 + Math.random()*0.8, 0.004 + game.phase*0.002, pan, 'sine');
+        if(game.phase>=2 && Math.random()<0.45){
+          playTone(freq*0.5, 0.5, 0.003 + game.phase*0.0018, -pan*0.6, 'triangle');
+        }
+        musicTimer = 3.6 + Math.random()*3.2 - game.phase*0.35;
+      }
+
+      // Story beats by room / state
+      if(game.x>25 && game.y<6 && !game.zones.has('ward')){ game.zones.add('ward'); setMessage('Ward intercom: "Inspector, please do not turn around."',3.8); }
+      if(game.x<9 && game.y>20 && !game.zones.has('pump')){ game.zones.add('pump'); setMessage('Pump hall walls pulse in time with your heartbeat.',3); }
+
+      // Reasoned ambience events by section/state
+      if(game.ambienceTimer<=0){
+        if(game.y>20){
+          setMessage('Pump pipes groan under pressure.',1.6);
+          playNoiseBurst(0.018 + game.phase*0.01, posPan(game.x+2,game.y+1));
+        }else if(game.y<9){
+          setMessage('Ward intercom crackles with static.',1.5);
+          playTone(148, 0.45, 0.005 + game.phase*0.0015, (Math.random()-0.5)*0.4, 'triangle');
+        }else if(!game.doors.A || !game.doors.B){
+          setMessage('Bulkhead metal shifts in the walls.',1.6);
+          playNoiseBurst(0.014 + game.phase*0.009, (Math.random()-0.5)*0.5);
+        }
+        game.ambienceTimer = 7 + Math.random()*7;
+      }
+
+      // jumpscares tied to explicit pressure: only when monster is near and player exposed
+      if(game.phase>=2 && !game.hide){
+        const md=Math.hypot(game.monster.x-game.x, game.monster.y-game.y);
+        if(game.scareCooldown<=0 && md<1.9 && game.noise>35){
+          runScare('It rushes past your peripheral vision.', 320 + Math.random()*160);
+        }
+      }
+
+      if(game.hintTimer<=0){
+        setSubtitle(objectiveHint(), 2.6);
+        game.hintTimer = 13 + Math.random()*6;
+      }
+
+      updateMonster(dt);
+    }
+
+    function renderUI(){
+      objectiveEl.textContent = game.objective;
+      if(game.subtitleTimer>0){ subtitleEl.style.display='block'; subtitleEl.textContent=game.subtitle; }
+      else { subtitleEl.style.display='none'; }
+
+      // auto-update objective by progress
+      if(!game.inventory.key) game.objective='Find the service key.';
+      else if(!game.doors.A) game.objective='Use the key to open Bulkhead A.';
+      else if(!game.inventory.cassette) game.objective='Find the patient cassette in lower ward.';
+      else if(!game.inventory.generator) game.objective='Power the generator.';
+      else if(!game.doors.B) game.objective='Open Bulkhead B.';
+      else if(game.inventory.records<3) game.objective=`Recover red archives (${game.inventory.records}/3).`;
+      else if(!game.won) game.objective='Reach the emergency elevator.';
+      else game.objective='Extraction complete.';
+    }
+
+    let last=performance.now();
+    function loop(now){
+      const dt=Math.min(0.033,(now-last)/1000); last=now;
+      update(dt); draw(); renderUI();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener('keydown', e=>{
+      const k=e.key.toLowerCase();
+      if(k==='e') interact();
+      if(k===' ') toggleHide();
+      keys.add(k);
+      if(['arrowleft','arrowright','arrowup','arrowdown',' '].includes(k)) e.preventDefault();
+    });
+    document.addEventListener('keyup', e=> keys.delete(e.key.toLowerCase()));
+    document.addEventListener('mousemove', e=>{
+      if(document.pointerLockElement===canvas && game.running && !game.dead && !game.won && !game.hide){ game.a += e.movementX*0.0025; }
+    });
+
+    document.getElementById('startBtn').onclick = async ()=>{
+      initAudio(); if(audioCtx.state==='suspended') await audioCtx.resume();
+      game.running=true; startEl.style.display='none'; canvas.requestPointerLock();
+      setMessage('Descent started. Keep quiet.',2.8);
+    };
+
+    canvas.addEventListener('click', ()=>{
+      if(game.running && document.pointerLockElement!==canvas && !game.dead && !game.won) canvas.requestPointerLock();
+    });
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
