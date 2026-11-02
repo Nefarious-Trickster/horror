@@ -41,7 +41,7 @@ export class Player {
     // the light itself lags behind the view for a physical feel
     this.flashRig = new THREE.Object3D();
     g.scene.add(this.flashRig);
-    const spot = this.spot = new THREE.SpotLight(0xfff1dc, 60, 28, 0.5, 0.5, 1.45);
+    const spot = this.spot = new THREE.SpotLight(0xfff1dc, 60, 28, 0.52, 0.75, 1.45);
     spot.castShadow = true;
     spot.shadow.mapSize.set(g.renderer.q.shadow, g.renderer.q.shadow);
     spot.shadow.camera.near = 0.15; spot.shadow.camera.far = 26;

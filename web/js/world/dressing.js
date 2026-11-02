@@ -588,7 +588,7 @@ export function buildWorld(game) {
     const sl2 = P.surgicalLamp(K, 1.0); put(sl2.group, 41.0, 30.2, 0, 3.2);
     W.fixtures.surgical = [
       LT.add({ pos: V(36.2, 2.0, 30.2), mats: [sl1.mat], baseEmissive: 3, color: 0xf2f6ff, intensity: 5, distance: 6, mode: 'dead', power: 'grid', zone: 'M' }),
-      LT.add({ pos: V(41.0, 2.0, 30.2), mats: [sl2.mat], baseEmissive: 3, color: 0xf2f6ff, intensity: 5, distance: 6, mode: 'steady', power: 'grid', zone: 'M' }),
+      LT.add({ pos: V(41.0, 2.0, 30.2), mats: [sl2.mat], baseEmissive: 1.6, color: 0xf2f6ff, intensity: 3.5, distance: 6, mode: 'steady', power: 'grid', zone: 'M' }),
     ];
     const body2 = P.sheetDrape(K, { w: 1.1, l: 1.9, top: 0.92, half: 0.36, body: true, seed: 31 }); put(body2, 41.0, 30.4, 0);
     const g1 = P.gurney(K, { bodyBag: true }); put(g1, 34.0, 35.6, HP); colAround(g1);

@@ -65,6 +65,7 @@ export class Monster {
   // noise from the world (footsteps, doors, bottles, alarms)
   hear(x, z, radius, kind) {
     if (!this.active || this.puppet || this.grace > 0) return;
+    if (kind === 'slam') return; // its own door-bashing
     const d = Math.hypot(x - this.pos.x, z - this.pos.z);
     const lvl = this.game.level;
     const clear = lvl.los(this.pos.x, this.pos.z, x, z);

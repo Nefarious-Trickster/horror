@@ -261,15 +261,16 @@ class Game {
     const P = this.player;
     P.frozen = true;
     const cam = P.camera;
-    const f = P.forward(new THREE.Vector3()); f.y = 0; f.normalize();
+    const eye = P.hidden ? P.hidden.eye.clone() : new THREE.Vector3(P.pos.x, P.eye, P.pos.z);
+    const f = new THREE.Vector3(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
     if (fromLocker && P.hidden) { P.hidden.ripping = true; P.hidden.target = 1; }
-    const mx = cam.position.x + f.x * 1.05, mz = cam.position.z + f.z * 1.05;
+    const mx = eye.x + f.x * 1.25, mz = eye.z + f.z * 1.25;
     monster.teleport(mx, mz, Math.atan2(-f.x, -f.z));
     monster.mode = 'attack';
     monster.root.visible = true;
     const faceLight = this.fxLight;
     faceLight.color.set(0xff9a80); faceLight.intensity = 4; faceLight.distance = 4;
-    faceLight.position.copy(cam.position).add(new THREE.Vector3(0, 0.3, 0)).addScaledVector(f, 0.3);
+    faceLight.position.copy(eye).add(new THREE.Vector3(0, 0.3, 0)).addScaledVector(f, 0.3);
     this.hud.flash(0.8);
     this.audio.stinger('jumpscare');
     P.shake = 1.4;

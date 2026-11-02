@@ -353,12 +353,12 @@ export class MonsterModel {
   update(dt, speed, mode, worldRoot) {
     this.t += dt;
     const P = this.pose;
-    const run = mode === 'run' || mode === 'attack';
+    const run = mode === 'run';
     const target = {
-      lean: run ? 0.75 : mode === 'search' ? 0.5 : mode === 'still' ? 0.25 : 0.4,
+      lean: mode === 'attack' ? 1.0 : run ? 0.75 : mode === 'search' ? 0.5 : mode === 'still' ? 0.25 : 0.4,
       reach: run ? 1 : mode === 'attack' ? 1.4 : 0,
       scream: mode === 'scream' ? 1 : 0,
-      crouch: mode === 'search' ? 0.15 : run ? 0.12 : 0,
+      crouch: mode === 'attack' ? 0.45 : mode === 'search' ? 0.15 : run ? 0.12 : 0,
       armsUp: mode === 'attack' ? 1 : 0,
     };
     const k = 1 - Math.exp(-dt * (mode === 'attack' ? 14 : 5));
@@ -396,9 +396,9 @@ export class MonsterModel {
     this.chest.rotation.y = moving ? -Math.sin(ph) * 0.22 : Math.sin(this.t * 0.6) * 0.05;
     this.chest.rotation.z = moving ? -Math.sin(ph) * 0.05 : 0;
     // neck counter-rotates so the head looks ahead / at target
-    this.neck.rotation.x = -P.lean * 0.9 + P.scream * 0.3 + P.look.y * 0.5;
+    this.neck.rotation.x = -P.lean * 0.9 + P.scream * 0.3 + P.look.y * 0.5 + P.armsUp * 0.35;
     this.neck.rotation.y = P.look.x * 0.5;
-    this.head.rotation.x = -P.lean * 0.45 + this.twitch.x - P.scream * 0.5 + P.look.y * 0.5;
+    this.head.rotation.x = -P.lean * 0.45 + this.twitch.x * (1 - P.armsUp) - P.scream * 0.5 + P.look.y * 0.5 + P.armsUp * 0.35;
     this.head.rotation.y = this.twitch.y * (mode === 'run' ? 0.3 : 1) + P.look.x * 0.5;
     this.head.rotation.z = this.twitch.z * (mode === 'run' ? 0.3 : 1) + (mode === 'search' ? Math.sin(this.t * 0.9) * 0.6 : 0);
 

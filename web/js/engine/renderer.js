@@ -98,7 +98,7 @@ export class Renderer {
       comp.addPass(ao);
     }
     if (q.bloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.55, 0.6, 0.92);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.4, 0.55, 0.95);
       comp.addPass(this.bloom);
     }
     comp.addPass(new OutputPass());
