@@ -1,32 +1,73 @@
-# Pressure Census
+# The Tall One
 
-A story-driven browser horror prototype: **Iron Lung-style pressure + DOORS-like room dread** in first-person 3D.
+A horror game in progress. Step one: the monster. This build is a **creature study**: one ruined basement room you can walk around in, with the creature standing in the corner under a flickering bulb.
 
-## Play
+## Run it
+
 ```bash
-python -m http.server 8000
+python3 -m http.server 8000
 ```
-Open `http://localhost:8000/web/`.
 
-## Controls
-- `WASD`: move
-- `Mouse`: look
-- `E`: interact
-- `Shift`: sprint (louder)
-- `Space`: hide/unhide near lockers
+Then open <http://localhost:8000>. It needs a WebGL2 browser with internet access (three.js loads from jsDelivr).
 
-## Story Flow
-1. Find service key.
-2. Open Bulkhead A.
-3. Recover patient cassette.
-4. Start generator.
-5. Open Bulkhead B.
-6. Recover 3 red archives.
-7. Reach emergency elevator.
+| Input | Action |
+| --- | --- |
+| WASD / arrows | walk |
+| Mouse | look (click to capture; click-drag also works) |
+| Shift | run |
+| F | flashlight on/off |
+| L | work light: bright, neutral inspection light for studying the model |
+| P | freeze the creature |
+| H | hide the help text |
+| Touch | left thumb walks, right thumb looks |
 
-## Horror Design
-- Multi-room facility with locked doors, progressive access, distinct visual wings, and themed furniture/props.
-- Hideable locker spots and a roaming hunter behavior.
-- Suspense-first pacing with phases: Calm → Pressure → Distortion → Hunt, with contextual (not random) scare triggers.
-- Reasoned ambience audio: quiet musical bed + location-based machinery/intercom sounds + nearby monster footsteps + scare stingers.
-- Minimal on-screen UI: objective + lore/log subtitles only.
+## The creature
+
+About 2.4 m tall, emaciated and hunched. The arms reach past its knees, the fingers are three times too long and end in claws, and it has no nose or lips. Its eyes are pinpricks deep inside black orbits that catch your flashlight.
+
+What it does:
+
+- **Watches you.** It holds a stare unnaturally long, then snaps its gaze to you or turns slowly toward you. The neck turns far past what a person's could, and the eyes always track you.
+- **Tilts its head**, curious, and twitches: a sudden jerk of the head or a single finger.
+- **Breathes** with a slow, ragged ribcage, faster when you are near.
+- **Never closes its mouth.** The jaw trembles open now and then.
+- **Up close**, it leans down at you, the jaw gapes, the arms lift and the hands open.
+
+### How it's made
+
+No downloaded assets. The creature is generated from code:
+
+- `tools/creature-def.mjs` defines the anatomy as about 330 signed-distance-field primitives: a ribcage with nine pairs of ribs, a spine with vertebrae that show through the back, a skull with carved orbits, a nasal cavity and a lipless mouth, two-bone forearms, knuckles, and so on.
+- `tools/build-creature.mjs` turns that into a mesh at 5 mm resolution using narrow-band sampling and surface nets, with every vertex projected onto the exact surface. It then:
+  - rigs a 56-bone skeleton, with weights derived from which primitive each vertex belongs to;
+  - bakes ambient occlusion, flesh thickness, curvature and paint masks (gums, eye bruising, necrotic fingertips, blood drip paths) into vertex data;
+  - writes `assets/creature.glb`, a standard skinned glTF that you can also open in Blender.
+- `js/creature.js` handles everything at runtime:
+  - the skin shader: mottled grey dead skin, raised veins, creases, pores, bruising, wet patches, dried blood;
+  - rotten teeth placed along the gum line, claws, and the eyes, which have a reflective tapetum;
+  - the procedural "behaviour" animation.
+
+Rebuild the model after editing the anatomy:
+
+```bash
+node tools/build-creature.mjs
+```
+
+The build takes about 25 s.
+
+### The room
+
+Everything in the room is procedural too: shader-generated tiles, peeling paint, water damage, mould, cracked concrete with puddles, a dried stain and drag mark, and claw marks gouged into the wall. The props are a rusted bed frame, an overturned chair, a barred window letting in cold light, pipes and a drain. Lighting is a hand-held flashlight with a projected beam pattern, a flickering shaded bulb, and moonlight through the bars. Post-processing adds GTAO, bloom, lens aberration, vignette and film grain.
+
+## Layout
+
+```
+index.html            entry page (import map → three@0.170.0)
+js/main.js            renderer, player controller, lights, loop
+js/creature.js        creature loader, skin shader, teeth/eyes/claws, animation brain
+js/room.js            room geometry + procedural surface shaders + dust
+js/post.js            post-processing chain
+js/noise.glsl.js      shared GLSL noise
+tools/                creature generator (Node, no dependencies)
+assets/creature.glb   generated model
+```

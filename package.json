@@ -1,0 +1,10 @@
+{
+  "name": "the-tall-one",
+  "private": true,
+  "type": "module",
+  "description": "Horror game prototype: creature study in a walkable room (three.js).",
+  "scripts": {
+    "build:creature": "node tools/build-creature.mjs",
+    "serve": "python3 -m http.server 8000"
+  }
+}

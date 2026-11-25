@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>The Tall One</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root { --fg: #cfc7b8; --dim: #6f685d; --bg: #020203; --accent: #8a1c14; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; font-family: "Courier New", ui-monospace, monospace; -webkit-user-select: none; user-select: none; }
+    canvas { display: block; touch-action: none; }
+    #intro { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0a0908 0%, #000 70%); transition: opacity 1.2s; z-index: 5; padding: 16px; }
+    #intro.gone { opacity: 0; pointer-events: none; }
+    .card { max-width: 520px; text-align: center; }
+    h1 { font-weight: normal; letter-spacing: 0.5em; font-size: clamp(22px, 5vw, 34px); margin: 0 0 0.4em; color: #d8cfc0; text-shadow: 0 0 18px rgba(138, 28, 20, 0.5); }
+    .sub { color: var(--dim); font-size: 13px; letter-spacing: 0.15em; margin-bottom: 2.2em; }
+    #loading { width: 220px; height: 2px; background: #1a1714; margin: 0 auto 1.6em; transition: opacity 0.6s; }
+    #loading.done { opacity: 0; }
+    #bar { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+    #enter { font: inherit; color: var(--dim); background: none; border: 1px solid #2a2622; padding: 12px 28px; letter-spacing: 0.3em; cursor: default; opacity: 0.4; transition: all 0.4s; }
+    #enter.ready { opacity: 1; color: var(--fg); cursor: pointer; border-color: #4a4239; }
+    #enter.ready:hover { border-color: var(--accent); color: #fff; }
+    .keys { margin-top: 2.2em; font-size: 12px; color: var(--dim); line-height: 1.9; }
+    .keys b { color: var(--fg); font-weight: normal; }
+    #status { color: #c55; font-size: 12px; margin-top: 1em; min-height: 1em; }
+    #hud { position: fixed; left: 16px; bottom: 14px; font-size: 11px; color: rgba(207, 199, 184, 0.55); letter-spacing: 0.08em; line-height: 1.7; transition: opacity 2s; z-index: 3; pointer-events: none; }
+    #hud.faded { opacity: 0.15; }
+    #hud.hidden { opacity: 0; }
+    .touch-only { display: none; }
+    body.touch .touch-only { display: block; }
+    body.touch .desk-only { display: none; }
+    #btns { position: fixed; right: 16px; bottom: 16px; display: none; gap: 10px; z-index: 4; }
+    body.touch #btns { display: flex; }
+    #btns button { font: inherit; font-size: 12px; color: var(--fg); background: rgba(10, 9, 8, 0.6); border: 1px solid #3a342e; padding: 12px 14px; letter-spacing: 0.15em; }
+    #stick { position: fixed; width: 110px; height: 110px; margin: -55px 0 0 -55px; border: 1px solid rgba(207, 199, 184, 0.2); border-radius: 50%; display: none; z-index: 4; pointer-events: none; }
+    #stick.on { display: block; }
+    #knob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(207, 199, 184, 0.18); }
+  </style>
+</head>
+<body>
+  <div id="intro">
+    <div class="card">
+      <h1>THE TALL ONE</h1>
+      <div class="sub">creature study &mdash; room 0</div>
+      <div id="loading"><div id="bar"></div></div>
+      <button id="enter">ENTER</button>
+      <div class="keys desk-only">
+        <b>WASD</b> move &nbsp; <b>mouse</b> look &nbsp; <b>shift</b> run<br />
+        <b>F</b> flashlight &nbsp; <b>L</b> work light (inspect) &nbsp; <b>P</b> freeze &nbsp; <b>H</b> hide text
+      </div>
+      <div class="keys touch-only">left thumb: walk &nbsp; right thumb: look</div>
+      <div id="status"></div>
+    </div>
+  </div>
+  <div id="hud">
+    <span class="desk-only">WASD move · mouse look · F flashlight · L work light · P freeze · H hide</span>
+    <span class="touch-only">left: walk · right: look</span>
+  </div>
+  <div id="btns"><button id="btnFlash">LIGHT</button><button id="btnWork">INSPECT</button></div>
+  <div id="stick"><div id="knob"></div></div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
