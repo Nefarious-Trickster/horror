@@ -105,11 +105,9 @@ export function defineCreature() {
   // spinal column mass at the back of the waist (keeps the back from collapsing)
   P(new RoundCone([0, 1.10, -0.06], [0, 1.40, -0.075], 0.035, 0.035, { bone: 'spine', k: 0.04 }));
   // pelvis + jutting hip bones
-  P(new Ellipsoid([0, 1.075, -0.03], [0.1, 0.068, 0.072], IDENT, { bone: 'hips', k: 0.045 }));
+  P(new Ellipsoid([0, 1.07, -0.03], [0.098, 0.066, 0.07], IDENT, { bone: 'hips', k: 0.075 }));
   for (const s of [1, -1]) {
-    P(new Ellipsoid([s * 0.098, 1.125, -0.004], [0.03, 0.022, 0.058], rotY(s * 0.45), { bone: 'hips', k: 0.016 }));
-    // sunken groin hollow, gives the pelvis a skeletal shape
-    P(new Ellipsoid([s * 0.06, 1.02, 0.04], [0.04, 0.03, 0.03], IDENT, { bone: 'hips', k: 0.04 }));
+    P(new Ellipsoid([s * 0.086, 1.118, -0.008], [0.022, 0.017, 0.046], rotY(s * 0.45), { bone: 'hips', k: 0.035 }));
   }
 
   // ribs: 9 pairs of thin arcs wrapped around the ribcage ellipsoid
@@ -280,41 +278,121 @@ export function defineCreature() {
   }
 
   // ------------------------------------------------------------------ legs & feet
+  // wasted muscle laid over bone: separate strands with grooves between them, tendons standing out
   for (const L of ['L', 'R']) {
     const { s, Hj, Kn, A, B } = legs[L];
     const g = 'leg' + L;
-    P(new RoundCone(Hj, Kn, 0.052, 0.034, { bone: 'thigh' + L, group: g }));
-    P(new Ellipsoid(add(lerp3(Hj, Kn, 0.38), [0, 0, 0.01]), [0.036, 0.15, 0.038], alignY(sub(Kn, Hj)), { bone: 'thigh' + L, group: g, k: 0.04 }));
-    P(new Sphere(add(Hj, [s * 0.052, -0.045, -0.005]), 0.026, { bone: 'thigh' + L, group: g, k: 0.03 })); // trochanter
-    for (const o of [1, -1]) P(new Sphere(add(Kn, [o * 0.022, 0.012, -0.004]), 0.029, { bone: 'thigh' + L, group: g, k: 0.02 }));
-    P(new Sphere(add(Kn, [0, 0.008, 0.034]), 0.025, { bone: 'shin' + L, group: g, k: 0.012 })); // kneecap
-    P(new Sphere(add(Kn, [0, -0.036, 0.008]), 0.033, { bone: 'shin' + L, group: g, k: 0.02 }));
-    P(new RoundCone(add(Kn, [0, -0.03, 0]), A, 0.029, 0.018, { bone: 'shin' + L, group: g }));
-    P(new RoundCone(add(Kn, [0, -0.06, 0.03]), add(A, [0, 0.06, 0.016]), 0.012, 0.0085, { bone: 'shin' + L, group: g, k: 0.014 })); // tibia ridge
-    P(new Ellipsoid(add(lerp3(Kn, A, 0.27), [0, 0, -0.02]), [0.024, 0.09, 0.026], alignY(sub(A, Kn)), { bone: 'shin' + L, group: g, k: 0.03 }));
-    for (const o of [1, -1]) P(new Sphere(add(A, [o * 0.021, 0.002, 0]), 0.017, { bone: 'foot' + L, group: g, k: 0.012 }));
-    // foot
+    const T = norm(sub(Kn, Hj));
+    let fwd = sub([0, 0, 1], mul(T, T[2])); fwd = norm(fwd);
+    const side = mul(norm(cross(T, fwd)), -s); // points outward (away from the body)
+    const at = (t, so = 0, fo = 0) => add(add(lerp3(Hj, Kn, t), mul(side, s * so * s)), mul(fwd, fo));
+    const thigh = { bone: 'thigh' + L, group: g };
+    P(new RoundCone(Hj, Kn, 0.034, 0.026, thigh));
+    P(new Sphere(add(Hj, [s * 0.052, -0.045, -0.005]), 0.026, { ...thigh, k: 0.03 })); // greater trochanter
+    P(new Ellipsoid(at(0.45, 0, 0.026), [0.021, 0.17, 0.017], alignY(T), { ...thigh, k: 0.011 }));    // rectus femoris
+    P(new Ellipsoid(at(0.55, 0.027, 0.006), [0.017, 0.17, 0.023], alignY(T), { ...thigh, k: 0.011 })); // vastus lateralis
+    P(new Ellipsoid(at(0.83, -0.022, 0.013), [0.019, 0.055, 0.019], alignY(T), { ...thigh, k: 0.011 })); // vastus medialis teardrop
+    P(new Ellipsoid(at(0.38, -0.02, -0.004), [0.023, 0.15, 0.024], alignY(T), { ...thigh, k: 0.011 }));  // adductors
+    P(new Ellipsoid(at(0.42, 0.004, -0.027), [0.026, 0.16, 0.021], alignY(T), { ...thigh, k: 0.011 }));  // hamstrings
+    P(new RoundCone(at(0.12, 0.041, 0.0), at(0.97, 0.033, 0.0), 0.0068, 0.0068, { ...thigh, k: 0.012 })); // iliotibial band
+    P(new RoundCone(at(0.04, 0.012, 0.042), at(0.9, -0.03, -0.004), 0.0062, 0.0062, { ...thigh, k: 0.012 })); // sartorius strap
+    for (const o of [1, -1]) {
+      // hamstring tendons framing the hollow behind the knee
+      P(new RoundCone(at(0.7, o * 0.017, -0.03), add(add(Kn, mul(side, s * o * s * 0.024)), [0, -0.045, -0.022]), 0.0068, 0.006, { ...thigh, k: 0.008 }));
+      P(new Sphere(add(Kn, [o * 0.022, 0.012, -0.004]), 0.027, { ...thigh, k: 0.02 })); // femoral condyles
+    }
+    P(new Sphere(add(Kn, [0, -0.01, -0.038]), 0.017, { ...thigh, sub: true, k: 0.014 })); // popliteal hollow
+
+    const shin = { bone: 'shin' + L, group: g };
+    P(new Sphere(add(Kn, [0, 0.008, 0.034]), 0.024, { ...shin, k: 0.01 }));                   // kneecap
+    P(new RoundCone(add(Kn, [0, -0.016, 0.034]), add(Kn, [0, -0.072, 0.03]), 0.0088, 0.0084, { ...shin, k: 0.01 })); // patellar tendon
+    P(new Sphere(add(Kn, [0, -0.075, 0.025]), 0.011, { ...shin, k: 0.012 }));                // tibial tuberosity
+    P(new Sphere(add(Kn, [0, -0.036, 0.006]), 0.031, { ...shin, k: 0.018 }));                // tibial plateau
+    const fibHead = add(Kn, [s * 0.033, -0.05, -0.008]);
+    P(new Sphere(fibHead, 0.0115, { ...shin, k: 0.01 }));
+    P(new RoundCone(add(Kn, [0, -0.03, 0]), A, 0.026, 0.016, shin));
+    P(new RoundCone(add(Kn, [0, -0.06, 0.03]), add(A, [0, 0.06, 0.016]), 0.011, 0.008, { ...shin, k: 0.012 })); // tibia crest
+    P(new RoundCone(fibHead, add(A, [s * 0.022, 0.03, -0.004]), 0.0072, 0.0062, { ...shin, k: 0.012 }));       // fibula
+    P(new Ellipsoid(add(lerp3(Kn, A, 0.25), [-s * 0.011, 0, -0.024]), [0.016, 0.085, 0.019], alignY(sub(A, Kn)), { ...shin, k: 0.022 })); // calf, medial head
+    P(new Ellipsoid(add(lerp3(Kn, A, 0.21), [s * 0.012, 0, -0.022]), [0.013, 0.07, 0.016], alignY(sub(A, Kn)), { ...shin, k: 0.022 }));  // calf, lateral head
     const heel = add(A, [0, -0.062, -0.034]);
-    P(new Sphere(heel, 0.029, { bone: 'foot' + L, group: g, k: 0.02 }));
-    P(new RoundCone(heel, B, 0.027, 0.021, { bone: 'foot' + L, group: g, k: 0.02 }));
-    P(new Ellipsoid(add(lerp3(A, B, 0.5), [0, -0.022, 0]), [0.032, 0.02, 0.068], rotX(0.45), { bone: 'foot' + L, group: g, k: 0.025 }));
+    P(new RoundCone(add(lerp3(Kn, A, 0.5), [0, 0, -0.026]), add(heel, [0, 0.022, -0.012]), 0.0088, 0.0066, { ...shin, k: 0.01 })); // Achilles tendon
+    for (const o of [1, -1]) P(new Sphere(add(A, [o * 0.017, 0.004, -0.024]), 0.0095, { ...shin, sub: true, k: 0.01 })); // hollows beside the tendon
+
+    const foot = { bone: 'foot' + L, group: g };
+    P(new Sphere(add(A, [-s * 0.017, 0.006, 0.002]), 0.0125, { ...foot, k: 0.016 }));  // medial malleolus
+    P(new Sphere(add(A, [s * 0.019, -0.008, -0.006]), 0.012, { ...foot, k: 0.016 })); // lateral malleolus, lower
+    P(new Sphere(heel, 0.027, { ...foot, k: 0.018 }));
+    P(new RoundCone(heel, B, 0.024, 0.018, { ...foot, k: 0.018 }));
+    P(new Ellipsoid(add(lerp3(A, B, 0.45), [0, -0.024, 0]), [0.027, 0.017, 0.06], rotX(0.45), { ...foot, k: 0.022 }));
+    P(new RoundCone(add(heel, [s * 0.018, -0.004, 0.01]), add(B, [s * 0.034, -0.006, -0.03]), 0.011, 0.009, { ...foot, k: 0.014 })); // outer edge
+    P(new Ellipsoid(add(lerp3(heel, B, 0.5), [-s * 0.02, -0.024, 0]), [0.018, 0.013, 0.04], IDENT, { ...foot, sub: true, k: 0.012 })); // arch
+    const toeBases = [];
+    for (let t = 0; t < 4; t++) toeBases.push([s * (0.097 + t * 0.0205), 0.024, 0.112 - t * 0.008]);
+    toeBases.forEach((bx, t) => {
+      // metatarsals and extensor tendons standing out on top of the foot
+      P(new RoundCone(add(A, [s * (-0.012 + t * 0.008), -0.03, 0.03]), add(bx, [0, 0.009, -0.012]), 0.0052, 0.0064, { ...foot, k: 0.009 }));
+    });
+
     for (let t = 0; t < 4; t++) {
-      const x0 = s * (0.097 + t * 0.0205);
-      const bx = [x0, 0.024, 0.112 - t * 0.008];
+      const bx = toeBases[t];
       const fg = `toe${L}${t}`;
-      field.groups.push({ name: fg, k: 0.008, joins: [{ c: bx, r: 0.026, k: 0.012 }] });
+      field.groups.push({ name: fg, k: 0.007, joins: [{ c: bx, r: 0.026, k: 0.012 }] });
       field.gIndex.set(fg, field.groups.length - 1);
       const sc = t === 0 ? 1.25 : 1 - t * 0.06;
-      const ln = (t === 0 ? 0.05 : 0.046 - t * 0.004);
-      const mx = [x0 + s * (t - 1) * 0.003, 0.021, bx[2] + ln];
-      const tip = [x0 + s * (t - 1) * 0.006, 0.0075, mx[2] + ln * 0.75];
-      P(new Sphere(bx, 0.0115 * sc, { bone: 'toes' + L, group: fg }));
-      P(new RoundCone(bx, mx, 0.0105 * sc, 0.0092 * sc, { bone: 'toes' + L, group: fg }));
-      P(new RoundCone(mx, tip, 0.0092 * sc, 0.0068 * sc, { bone: 'toes' + L, group: fg }));
-      claws.push({ pos: tip, dir: norm(sub(tip, mx)), bone: 'toes' + L, len: 0.022 + R() * 0.008, r: 0.0058 * sc, curl: [0, -1, 0] });
+      const ln = (t === 0 ? 0.056 : 0.052 - t * 0.004) * 1.2;
+      const dx = s * (t - 1) * 0.004;
+      // long, knuckled toes clenched into the floor (hammer-toe curl)
+      const k1 = [bx[0] + dx * 0.5, 0.034, bx[2] + ln * 0.42];
+      const k2 = [bx[0] + dx, 0.03, k1[2] + ln * 0.34];
+      const tip = [bx[0] + dx * 1.4, 0.0075, k2[2] + ln * 0.22];
+      const toe = { bone: 'toes' + L, group: fg };
+      P(new Sphere(bx, 0.0118 * sc, toe));
+      P(new RoundCone(bx, k1, 0.0098 * sc, 0.0086 * sc, toe));
+      P(new Sphere(k1, 0.0094 * sc, { ...toe, k: 0.005 }));
+      P(new RoundCone(k1, k2, 0.0084 * sc, 0.0078 * sc, toe));
+      if (t > 0) P(new Sphere(k2, 0.0085 * sc, { ...toe, k: 0.005 }));
+      P(new RoundCone(k2, tip, 0.0078 * sc, 0.0062 * sc, toe));
+      claws.push({ pos: tip, dir: norm(sub(tip, k2)), bone: 'toes' + L, len: 0.022 + R() * 0.008, r: 0.0056 * sc, curl: [0, -1, 0] });
       tips.push(tip);
     }
   }
+
+  // ------------------------------------------------------------------ torso surface detail
+  // features snapped onto the skin of what is already built, so they follow the hunched pose exactly
+  field.build();
+  const snap = (start, dir, inset = 0) => { const d = norm(dir); return add(surfaceAlong(field, start, d), mul(d, -inset)); };
+  const chain = (pts, r1, r2, opts) => { for (let i = 0; i < pts.length - 1; i++) P(new RoundCone(pts[i], pts[i + 1], r1 + (r2 - r1) * (i / (pts.length - 1)), r1 + (r2 - r1) * ((i + 1) / (pts.length - 1)), opts(pts[i]))); };
+  const byY = (p) => (p[1] < 1.19 ? 'hips' : p[1] < 1.4 ? 'spine' : 'chest');
+  for (const s of [1, -1]) {
+    // rectus abdominis: two wasted strands with the linea alba groove between
+    chain([1.37, 1.32, 1.27, 1.22, 1.17, 1.12].map((y) => snap([s * 0.021, y, -0.045], [s * 0.18, 0, 1], 0.0062)), 0.0085, 0.0075, (p) => ({ bone: byY(p), k: 0.014 }));
+    // iliac crest wrapping from the front point of the hip around to the back
+    const crest = [0.35, 0.9, 1.45, 2.0, 2.5].map((a) => snap([s * 0.035, 1.12 + 0.006 * Math.sin(a), -0.03], [s * Math.sin(a), 0.1, Math.cos(a)], 0.0075));
+    chain(crest, 0.0068, 0.0062, () => ({ bone: 'hips', k: 0.012 }));
+    // inguinal ridge: hip point down to the pubic bone, the starved "V"
+    P(new RoundCone(crest[0], snap([s * 0.018, 1.03, -0.03], [s * 0.1, -0.2, 1], 0.004), 0.0062, 0.0058, { bone: 'hips', k: 0.01 }));
+    // erector spinae: two ropes of muscle up the back, the spine sunk in the groove between them
+    const backL = [1.1, 1.17, 1.24, 1.31, 1.38].map((y) => snap([s * 0.031, y, -0.04], [s * 0.2, 0.05, -1], 0.012));
+    const backU = [-0.13, -0.08, -0.03, 0.02].map((h) => snap(chest.p(s * 0.031, h, 0), chest.d(s * 0.2, 0.05, -1), 0.012));
+    chain([...backL, ...backU], 0.016, 0.012, (p) => ({ bone: byY(p), k: 0.024 }));
+    // lower edge of the ribcage (costal margin) standing proud of the sunken belly
+    const costal = [0.0, 0.25, 0.5, 0.75].map((u) => snap(chest.p(s * (0.012 + u * 0.085), -0.1 - u * 0.045, 0), chest.d(s * u * 0.9, -0.15, 1), 0.005));
+    chain(costal, 0.0075, 0.0085, () => ({ bone: 'ribcage', k: 0.01 }));
+  }
+  for (const [y, w] of [[1.165, 0.05], [1.148, 0.042]]) {
+    const pts = [-1, -0.5, 0, 0.5, 1].map((u) => snap([u * w * 0.5, y, -0.045], [u * 0.5, -0.05, 1], 0.0025));
+    chain(pts, 0.0034, 0.0034, () => ({ bone: 'hips', k: 0.006 }));
+  }
+  // sacrum plate at the base of the spine
+  P(new Ellipsoid(snap([0, 1.06, -0.03], [0, -0.15, -1], 0.012), [0.028, 0.044, 0.008], rotX(-0.3), { bone: 'hips', k: 0.025 }));
+  // carved: navel, hollows above the collarbones, under the ribs
+  post(new Sphere(snap([0, 1.205, -0.045], [0, 0, 1], -0.002), 0.0058, {}), 0.004);
+  for (const s of [1, -1]) {
+    const scDir = chest.d(0, 0.7, 0.7);
+    post(new Sphere(add(snap(chest.p(s * 0.085, 0.15, 0.0), scDir), mul(norm(scDir), 0.011)), 0.018, {}), 0.02);
+  }
+  post(new Ellipsoid(add(snap([0, 1.345, -0.045], [0, 0, 1]), [0, 0, 0.018]), [0.05, 0.026, 0.026], IDENT, {}), 0.026); // subcostal hollow
 
   // ------------------------------------------------------------------ vertebrae
   // snapped onto the surface of what we have so far, so they poke through the skin of the back
