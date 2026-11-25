@@ -293,7 +293,16 @@ export function buildRoom(scene) {
 
   const wallMat = surfaceMaterial('wall');
   // back (z=min) and front (z=max) walls
-  const back = mesh(new THREE.PlaneGeometry(W, Hh), wallMat); back.position.set(0, Hh / 2, min.z); group.add(back);
+  // back wall, with a doorway cut through it
+  const DOOR = { x: -1.2, w: 0.96, h: 2.1 };
+  {
+    const sh = new THREE.Shape();
+    sh.moveTo(-W / 2, -Hh / 2); sh.lineTo(W / 2, -Hh / 2); sh.lineTo(W / 2, Hh / 2); sh.lineTo(-W / 2, Hh / 2); sh.closePath();
+    const hl = new THREE.Path();
+    hl.moveTo(DOOR.x - DOOR.w / 2, -Hh / 2); hl.lineTo(DOOR.x + DOOR.w / 2, -Hh / 2); hl.lineTo(DOOR.x + DOOR.w / 2, -Hh / 2 + DOOR.h); hl.lineTo(DOOR.x - DOOR.w / 2, -Hh / 2 + DOOR.h); hl.closePath();
+    sh.holes.push(hl);
+    const back = mesh(new THREE.ShapeGeometry(sh), wallMat); back.position.set(0, Hh / 2, min.z); group.add(back);
+  }
   const front = mesh(new THREE.PlaneGeometry(W, Hh), wallMat); front.rotation.y = Math.PI; front.position.set(0, Hh / 2, max.z); group.add(front);
   // right wall (x=max)
   const right = mesh(new THREE.PlaneGeometry(D, Hh), wallMat); right.rotation.y = -Math.PI / 2; right.position.set(max.x, Hh / 2, (min.z + max.z) / 2); group.add(right);
@@ -484,7 +493,9 @@ export function buildRoom(scene) {
     }
   }
 
-  return { group, colliders, update, lamp, moon, ambient, dustMat };
+  const door = buildDoor(group, DOOR, min.z);
+  const baseUpdate = update;
+  return { group, colliders, update: (dt, t, spot) => { baseUpdate(dt, t, spot); door.update(dt, t); }, lamp, moon, ambient, dustMat, door };
 }
 
 // a soft, imperfect flashlight beam pattern (projected through the spotlight)
@@ -506,4 +517,105 @@ export function flashlightCookie() {
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+// ------------------------------------------------------------------ the breakable door
+// A plank door in the back wall. hit() dents and rattles it; smash() throws the pieces into the room.
+function buildDoor(group, D, wallZ) {
+  const wood = surfaceMaterial('wood');
+  const frameMat = surfaceMaterial('metal', { tint: [0.22, 0.2, 0.17] });
+  // frame
+  const fr = (w, h, d, x, y, z) => { const m = mesh(new THREE.BoxGeometry(w, h, d), frameMat); m.position.set(x, y, z); group.add(m); };
+  fr(0.07, D.h + 0.07, 0.26, D.x - D.w / 2 - 0.035, (D.h + 0.07) / 2, wallZ - 0.05);
+  fr(0.07, D.h + 0.07, 0.26, D.x + D.w / 2 + 0.035, (D.h + 0.07) / 2, wallZ - 0.05);
+  fr(D.w + 0.14, 0.07, 0.26, D.x, D.h + 0.035, wallZ - 0.05);
+  // the corridor beyond: dark, with a dying red light far down it
+  const cor = mesh(new THREE.BoxGeometry(1.5, 2.5, 4.5), surfaceMaterial('ceiling', { side: THREE.BackSide }), { cast: false });
+  cor.position.set(D.x, 1.25, wallZ - 2.25 - 0.01); group.add(cor);
+  const red = new THREE.PointLight(0xff2a12, 0.6, 6, 2); red.position.set(D.x + 0.4, 2.1, wallZ - 4.0); group.add(red);
+  const redBulb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff3018 })); redBulb.position.copy(red.position); group.add(redBulb);
+
+  // door leaf: 5 vertical planks, each in 3 pieces, plus two cross braces
+  const pieces = [];
+  const thick = 0.045, nP = 5, pw = D.w / nP, segH = [0.62, 0.78, 0.68];
+  const doorZ = wallZ - 0.04;
+  for (let i = 0; i < nP; i++) {
+    let y0 = 0.005;
+    for (let j = 0; j < 3; j++) {
+      const h = segH[j] * (D.h - 0.02) / 2.08 + (j === 1 ? (i % 2 ? 0.04 : -0.04) : 0) * (j === 1 ? 1 : 0);
+      const geo = new THREE.BoxGeometry(pw - 0.006, h - 0.004, thick, 1, 3, 1);
+      const m = mesh(geo, wood);
+      const home = new THREE.Vector3(D.x - D.w / 2 + pw * (i + 0.5), y0 + h / 2, doorZ);
+      m.position.copy(home); group.add(m);
+      pieces.push({ m, home, half: new THREE.Vector3((pw - 0.006) / 2, (h - 0.004) / 2, thick / 2), vel: new THREE.Vector3(), ang: new THREE.Vector3(), dent: 0, rest: false });
+      y0 += h;
+    }
+  }
+  for (const y of [0.45, 1.65]) {
+    const m = mesh(new THREE.BoxGeometry(D.w - 0.06, 0.11, 0.03), wood);
+    const home = new THREE.Vector3(D.x, y, doorZ + thick / 2 + 0.015);
+    m.position.copy(home); group.add(m);
+    pieces.push({ m, home, half: new THREE.Vector3((D.w - 0.06) / 2, 0.055, 0.015), vel: new THREE.Vector3(), ang: new THREE.Vector3(), dent: 0, rest: false, brace: true });
+  }
+  const shake = { x: 0, v: 0 };
+  const door = {
+    position: new THREE.Vector3(D.x, 0, wallZ), normal: new THREE.Vector3(0, 0, 1), broken: false,
+    hit(n) {
+      shake.v += 1.6 + n * 0.8;
+      // each blow caves the planks in around where the fists land
+      for (const p of pieces) {
+        const d = Math.hypot(p.home.x - D.x, p.home.y - 1.35);
+        p.dent += Math.max(0, 0.05 - d * 0.04) * n + Math.random() * 0.01;
+        if (!p.brace && Math.random() < 0.25 * n) p.m.rotation.z += (Math.random() - 0.5) * 0.08;
+      }
+    },
+    smash(dir) {
+      if (door.broken) return;
+      door.broken = true;
+      for (const p of pieces) {
+        p.vel.set(0, 0, 0).addScaledVector(dir, 2.5 + Math.random() * 4); // blown through the doorway, away from the blows
+        p.vel.x += (Math.random() - 0.5) * 2.5; p.vel.y += 0.5 + Math.random() * 2.5;
+        if (Math.random() < 0.5) { p.vel.multiplyScalar(-0.5); p.vel.x *= 2.2; } // half splinter back into the room
+        p.ang.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14);
+        p.rest = false;
+      }
+    },
+    reset() {
+      door.broken = false; shake.x = shake.v = 0;
+      for (const p of pieces) { p.m.position.copy(p.home); p.m.rotation.set(0, 0, 0); p.vel.set(0, 0, 0); p.ang.set(0, 0, 0); p.dent = 0; p.rest = false; }
+    },
+    update(dt) {
+      if (dt <= 0) return;
+      if (!door.broken) {
+        // rattle in the frame
+        shake.v += (-shake.x * 900 - shake.v * 18) * dt; shake.x += shake.v * dt;
+        for (const p of pieces) { p.m.position.z = p.home.z - p.dent + shake.x * 0.004; p.m.position.x = p.home.x + shake.x * 0.0015 * Math.sin(p.home.y * 9); }
+        return;
+      }
+      for (const p of pieces) {
+        if (p.rest) continue;
+        p.vel.y -= 9.8 * dt;
+        p.m.position.addScaledVector(p.vel, dt);
+        p.m.rotation.x += p.ang.x * dt; p.m.rotation.y += p.ang.y * dt; p.m.rotation.z += p.ang.z * dt;
+        // lowest corner against the floor
+        p.m.updateMatrix();
+        let minY = Infinity;
+        for (let c = 0; c < 8; c++) {
+          const v = new THREE.Vector3(c & 1 ? p.half.x : -p.half.x, c & 2 ? p.half.y : -p.half.y, c & 4 ? p.half.z : -p.half.z).applyMatrix4(p.m.matrix);
+          minY = Math.min(minY, v.y);
+        }
+        if (minY < 0) {
+          p.m.position.y -= minY;
+          if (p.vel.y < 0) p.vel.y *= -0.25;
+          p.vel.x *= 0.6; p.vel.z *= 0.6; p.ang.multiplyScalar(0.55);
+          if (p.vel.lengthSq() < 0.02 && p.ang.lengthSq() < 0.5) { p.rest = true; }
+        }
+        // keep pieces inside the room + corridor
+        p.m.position.x = Math.min(Math.max(p.m.position.x, ROOM.min.x + 0.1), ROOM.max.x - 0.1);
+        if (p.m.position.z < wallZ - 0.1) p.m.position.x = Math.min(Math.max(p.m.position.x, D.x - 0.65), D.x + 0.65);
+        p.m.position.z = Math.max(p.m.position.z, wallZ - 4.3);
+      }
+    },
+  };
+  return door;
 }

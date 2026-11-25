@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Creature } from './creature.js';
+import { ACTION_LIST } from './anim.js';
 import { buildRoom, flashlightCookie, ROOM, CREATURE_SPOT } from './room.js';
 import { createPost } from './post.js';
 
@@ -77,6 +78,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') toggleWork();
   if (e.code === 'KeyH') $('hud').classList.toggle('hidden');
   if (e.code === 'KeyP' && creature) creature.frozen = !creature.frozen;
+  const act = ACTION_LIST.find(([, , key]) => e.code === (/\d/.test(key) ? 'Digit' + key : 'Key' + key));
+  if (act) playAction(act[0]);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 function toggleFlash() { flashOn = !flashOn; click(); }
@@ -142,8 +145,12 @@ function collide(p) {
     const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
     if (d < r) { if (d > 1e-5) { p.x = cx + (dx / d) * r; p.z = cz + (dz / d) * r; } }
   }
-  const dx = p.x - CREATURE_SPOT.x, dz = p.z - (CREATURE_SPOT.z + 0.1), d = Math.hypot(dx, dz), R = 0.62;
-  if (d < R) { p.x = CREATURE_SPOT.x + (dx / d) * R; p.z = CREATURE_SPOT.z + 0.1 + (dz / d) * R; }
+  // the creature's body: its feet, hips and chest (which reach far forward when it crawls)
+  if (creature) for (const [b, R] of creatureBlockers) {
+    const q = b.getWorldPosition(_cb);
+    const dx = p.x - q.x, dz = p.z - q.z, d = Math.hypot(dx, dz);
+    if (d < R && d > 1e-5) { p.x = q.x + (dx / d) * R; p.z = q.z + (dz / d) * R; }
+  }
 }
 
 // ------------------------------------------------------------------ audio (tiny: flashlight click only)
@@ -168,6 +175,28 @@ addEventListener('resize', () => {
 
 // ------------------------------------------------------------------ load creature
 let creature = null;
+let creatureBlockers = [];
+const _cb = new THREE.Vector3();
+
+// action panel: buttons (and number keys) that make the creature perform
+function playAction(name) {
+  if (!creature) return;
+  creature.frozen = false;
+  creature.anim.play(name);
+}
+function buildActionPanel() {
+  const panel = $('actions');
+  for (const [name, label, key] of ACTION_LIST) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.action = name;
+    b.innerHTML = `<kbd>${key}</kbd>${label}`;
+    b.addEventListener('click', (e) => { e.stopPropagation(); playAction(name); b.blur(); });
+    panel.appendChild(b);
+  }
+}
+function markAction(name) {
+  for (const b of $('actions').children) b.classList.toggle('on', b.dataset.action === name);
+}
 const bar = $('bar');
 // a page may point at another copy of the model (e.g. the JSON .gltf form) with <meta name="creature-model">
 const modelMeta = document.querySelector('meta[name="creature-model"]')?.content;
@@ -175,12 +204,18 @@ const modelUrl = modelMeta ? new URL(modelMeta, document.baseURI).href : new URL
 Creature.load(modelUrl, (p) => { bar.style.width = (p * 100).toFixed(0) + '%'; })
   .then((c) => {
     creature = c;
+    window.__creature = c; // handy for poking at it from the devtools console
     c.object.position.set(CREATURE_SPOT.x, 0, CREATURE_SPOT.z);
     c.object.rotation.y = Math.atan2(0.2 - CREATURE_SPOT.x, 3.2 - CREATURE_SPOT.z) * 0.85;
     scene.add(c.object);
+    c.object.updateMatrixWorld(true);
+    const anim = c.attach({ colliders: room.colliders, bounds: ROOM, door: room.door });
+    anim.onAction = markAction;
+    buildActionPanel(); markAction('idle');
+    creatureBlockers = [[c.bone.root, 0.45], [c.bone.hips, 0.5], [c.bone.upperChest, 0.45], [c.bone.head, 0.3]];
+    if (params.has('act')) c.anim.play(params.get('act'));
+    if (params.has('t')) { const T = parseFloat(params.get('t')); for (let i = 0; i < T * 30; i++) { c.update(1 / 30, ctx()); room.door.update(1 / 30, 0); } }
     if (params.has('freeze')) c.frozen = true;
-    if (params.has('t')) { const T = parseFloat(params.get('t')); for (let i = 0; i < T * 30; i++) c.update(1 / 30, ctx()); }
-    if (params.has('jaw')) c.state.tJaw = parseFloat(params.get('jaw'));
     $('loading').classList.add('done');
     $('enter').classList.add('ready');
     window.__ready = true;
@@ -193,7 +228,7 @@ $('enter').addEventListener('click', () => {
   click();
   setTimeout(() => $('hud').classList.add('faded'), 9000);
 });
-if (params.has('noui')) { $('intro').classList.add('gone'); $('hud').classList.add('hidden'); }
+if (params.has('noui')) { $('intro').classList.add('gone'); $('hud').classList.add('hidden'); $('actions').hidden = true; }
 
 // ------------------------------------------------------------------ loop
 const clock = new THREE.Clock();
@@ -228,6 +263,12 @@ function frame() {
   camera.position.set(player.pos.x, player.eye + bobY + sway, player.pos.z).addScaledVector(right, bobX);
   camera.rotation.order = 'YXZ';
   camera.rotation.set(player.pitch + Math.sin(time * 0.5) * 0.003, player.yaw, Math.cos(player.bob) * 0.004 * speed);
+  // impacts, landings and screams shake the view
+  const shake = creature ? Math.min(creature.anim.shake, 1.5) : 0;
+  if (shake > 0.01) {
+    camera.position.x += (Math.random() - 0.5) * 0.03 * shake; camera.position.y += (Math.random() - 0.5) * 0.03 * shake;
+    camera.rotation.z += (Math.random() - 0.5) * 0.02 * shake;
+  }
   camera.updateMatrixWorld();
 
   // flashlight follows the view with a little lag and tremor
@@ -240,6 +281,7 @@ function frame() {
   flashRig.updateMatrixWorld(true);
 
   workKey.intensity = workOn ? 2.6 : 0;
+  if (creature) { const cp = creature.object.position; workKey.target.position.set(cp.x, 1.4, cp.z); workKey.position.set(cp.x - 3.4, 3, cp.z + 6.4); }
   workFill.intensity = workOn ? 0.55 : 0;
 
   let near = 0;

@@ -14,8 +14,9 @@
   </script>
   <style>
     /* one dark visual world: a pitch-black room, so the page commits to a single dark look */
-    :root { --fg: #cfc7b8; --dim: #6f685d; --bg: #020203; --accent: #8a1c14; --line: #2a2622; --line-hi: #4a4239; color-scheme: dark; }
+    :root { --fg: #cfc7b8; --dim: #6f685d; --bg: #020203; --accent: #8a1c14; --line: #2a2622; --line-hi: #4a4239; --panel: rgba(8, 7, 6, 0.72); --panel-on: rgba(60, 14, 10, 0.78); color-scheme: dark; }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; font-family: "Courier New", ui-monospace, monospace; -webkit-user-select: none; user-select: none; }
     canvas { display: block; touch-action: none; position: fixed; inset: 0; }
     #intro { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0a0908 0%, #000 70%); transition: opacity 1.2s; z-index: 5; padding: 16px; }
@@ -42,6 +43,15 @@
     #btns { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: none; gap: 10px; z-index: 4; }
     body.touch #btns { display: flex; }
     #btns button { font: inherit; font-size: 12px; color: var(--fg); background: rgba(10, 9, 8, 0.6); border: 1px solid #3a342e; padding: 12px 14px; letter-spacing: 0.15em; }
+    #actions { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: calc(14px + env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 4px; z-index: 4; max-height: calc(100% - 28px); overflow-y: auto; }
+    #actions .title { font-size: 10px; letter-spacing: 0.25em; color: var(--dim); margin: 0 0 4px 2px; }
+    #actions button { font: inherit; font-size: 12px; letter-spacing: 0.06em; color: var(--fg); background: var(--panel); border: 1px solid var(--line); padding: 7px 12px 7px 8px; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 9px; min-width: 150px; }
+    #actions button:hover { border-color: var(--line-hi); }
+    #actions button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+    #actions button.on { border-color: var(--accent); color: var(--fg); background: var(--panel-on); }
+    #actions kbd { font: inherit; font-size: 10px; color: var(--dim); border: 1px solid var(--line); min-width: 18px; text-align: center; padding: 1px 3px; }
+    body.touch #actions button { min-width: 0; padding: 9px 10px; }
+    body.touch #actions kbd { display: none; }
     #stick { position: fixed; width: 110px; height: 110px; margin: -55px 0 0 -55px; border: 1px solid rgba(207, 199, 184, 0.2); border-radius: 50%; display: none; z-index: 4; pointer-events: none; }
     #stick.on { display: block; }
     #knob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(207, 199, 184, 0.18); }
@@ -56,16 +66,18 @@
       <button id="enter">ENTER</button>
       <div class="keys desk-only">
         <b>WASD</b> move &nbsp; <b>mouse</b> look &nbsp; <b>shift</b> run<br />
-        <b>F</b> flashlight &nbsp; <b>L</b> work light (inspect) &nbsp; <b>P</b> freeze &nbsp; <b>H</b> hide text
+        <b>F</b> flashlight &nbsp; <b>L</b> work light (inspect) &nbsp; <b>P</b> freeze &nbsp; <b>H</b> hide text<br />
+        <b>1&ndash;0</b> creature actions &nbsp; <b>R</b> reset &nbsp; (<b>Esc</b> frees the mouse to click the panel)
       </div>
       <div class="keys touch-only">left thumb: walk &nbsp; right thumb: look</div>
       <div id="status"></div>
     </div>
   </div>
   <div id="hud">
-    <span class="desk-only">WASD move · mouse look · F flashlight · L work light · P freeze · H hide</span>
+    <span class="desk-only">WASD move · mouse look · F flashlight · L work light · P freeze · H hide · number keys or Esc + click: creature actions</span>
     <span class="touch-only">left: walk · right: look</span>
   </div>
+  <div id="actions" aria-label="Creature actions"><div class="title">CREATURE</div></div>
   <div id="btns"><button id="btnFlash">LIGHT</button><button id="btnWork">INSPECT</button></div>
   <div id="stick"><div id="knob"></div></div>
   <script type="module" src="./js/main.js"></script>

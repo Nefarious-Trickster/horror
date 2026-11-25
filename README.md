@@ -19,7 +19,26 @@ Then open <http://localhost:8000>. It needs a WebGL2 browser with internet acces
 | L | work light: bright, neutral inspection light for studying the model |
 | P | freeze the creature |
 | H | hide the help text |
+| 1–0, R | make the creature perform (see below); Esc frees the mouse so you can click the panel instead |
 | Touch | left thumb walks, right thumb looks |
+
+### Creature actions (test panel, top right)
+
+| Key | Action | What it does |
+| --- | --- | --- |
+| 1 | Idle | stands in place and stares; leans in and reaches when you get close |
+| 2 | Walk | patrols a loop around the room, arms swinging, never taking its eyes off you |
+| 3 | Stalk | crouches and creeps toward you with its hands raised, then stops about 2 m away and waits |
+| 4 | Crawl | drops onto all fours and patrols on long splayed limbs, head craned up at you |
+| 5 | Chase | sprints at you, lunges with its arms out, then screams in your face |
+| 6 | Leap | crouches, then pounces flat through the air toward you and lands in a crouch |
+| 7 | Look around | sniffs and scans the room, turning its head far past what a person could |
+| 8 | Break door | walks to the plank door in the back wall and beats it apart with overhead blows |
+| 9 | Scream | rears back, then thrusts its head and spread claws at you, trembling |
+| 0 | Convulse | a violent fit of jerks and flailing |
+| R | Reset | puts it back in its corner and repairs the door |
+
+All of these are procedural (`js/anim.js`). Feet and hands are planted on the floor by a step planner and reached with two-bone IK, so nothing slides. Each action writes a target pose that is smoothed per bone, so switching actions blends instead of snapping. The gaze layer keeps the head and eyes on you through everything.
 
 ## The creature
 
@@ -64,7 +83,8 @@ Everything in the room is procedural too: shader-generated tiles, peeling paint,
 ```
 index.html            entry page (import map → three@0.170.0)
 js/main.js            renderer, player controller, lights, loop
-js/creature.js        creature loader, skin shader, teeth/eyes/claws, animation brain
+js/creature.js        creature loader, skin shader, teeth, eyes, claws
+js/anim.js            procedural animation: actions, gait planner, IK, gaze
 js/room.js            room geometry + procedural surface shaders + dust
 js/post.js            post-processing chain
 js/noise.glsl.js      shared GLSL noise
