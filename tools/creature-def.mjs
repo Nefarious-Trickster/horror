@@ -3,7 +3,7 @@
 // Coordinate system: +Y up, creature faces +Z, its left side is +X.
 
 import {
-  Field, Sphere, RoundCone, Ellipsoid, Frame,
+  Field, Sphere, RoundCone, Ellipsoid, Frame, FlatCapsule, ProfiledBody,
   v3, add, sub, mul, norm, lerp3, cross, dot, len,
   rotX, rotY, rotZ, mmul, IDENT, smoothstep,
 } from './sdf.mjs';
@@ -97,7 +97,18 @@ export function defineCreature() {
   const P = (p) => field.addPrim(p);
 
   // ------------------------------------------------------------------ torso
-  P(new Ellipsoid(chest.p(0, 0.02, 0), [0.122, 0.165, 0.09], chest.R, { bone: 'ribcage', k: 0.03 }));
+  // ribcage profile (chest-local): narrow at the top, widest at the floating ribs, like a real thorax
+  const RC = [[0.205, 0.05, 0.045], [0.15, 0.094, 0.07], [0.08, 0.117, 0.084], [0.0, 0.126, 0.09], [-0.08, 0.129, 0.09], [-0.15, 0.12, 0.083], [-0.2, 0.094, 0.064]];
+  const rcProf = (y) => {
+    if (y >= RC[0][0]) return [RC[0][1], RC[0][2]];
+    for (let i = 0; i < RC.length - 1; i++) {
+      const [y0, a0, b0] = RC[i], [y1, a1, b1] = RC[i + 1];
+      if (y <= y0 && y >= y1) { const t = (y0 - y) / (y0 - y1), u = t * t * (3 - 2 * t); return [a0 + (a1 - a0) * u, b0 + (b1 - b0) * u]; }
+    }
+    return [RC[RC.length - 1][1], RC[RC.length - 1][2]];
+  };
+  // the soft body under the ribs sits a few millimetres inside them, so skin sinks between the bones
+  P(new ProfiledBody(chest, -0.2, 0.2, (y) => { const [a, b] = rcProf(y); return [a - 0.0065, b - 0.0065]; }, { bone: 'ribcage', k: 0.05 }));
   // hunched upper back
   P(new Ellipsoid(chest.p(0, 0.105, -0.03), [0.112, 0.085, 0.066], chest.R, { bone: 'upperChest', k: 0.05 }));
   // abdomen: sunken, thin waist
@@ -110,29 +121,77 @@ export function defineCreature() {
     P(new Ellipsoid([s * 0.086, 1.118, -0.008], [0.022, 0.017, 0.046], rotY(s * 0.45), { bone: 'hips', k: 0.035 }));
   }
 
-  // ribs: 9 pairs of thin arcs wrapped around the ribcage ellipsoid
-  const rc = { a: 0.122, b: 0.09, ry: 0.165, cy: 0.02 };
-  for (let i = 0; i < 9; i++) {
-    const h = 0.125 - i * 0.031;
-    const thEnd = i < 6 ? 0.86 : i < 8 ? 0.70 : 0.52;
-    for (const s of [1, -1]) {
+  // ---- ribs: 12 pairs of flat bands. They leave the spine, sweep down and around, and end in
+  // cartilage that turns back UP to the breastbone (ribs 1-7) or to the rib above (8-10, forming
+  // the costal arch under the sternum); 11 and 12 float free.
+  const ribJit = Array.from({ length: 24 }, () => [(R() - 0.5) * 0.006, (R() - 0.5) * 0.008]);
+  const ribLocal = (i, th, sgn) => {
+    const [jy, jd] = ribJit[i * 2 + (sgn > 0 ? 0 : 1)];
+    const y0 = 0.178 - i * 0.0305 + jy, drop = 0.055 + i * 0.0068 + jd;
+    const y = y0 - drop * (1 - Math.cos(th)) / 2;
+    const [a, b] = rcProf(y);
+    // one rib on its right side was broken and healed caved-in
+    const cave = sgn < 0 && i === 6 ? 1 - 0.07 * Math.exp(-((((th / Math.PI) - 0.5) / 0.07) ** 2)) : 1;
+    return [sgn * a * Math.sin(th) * cave, y, -b * Math.cos(th) * cave];
+  };
+  const frontLocal = (x, y) => { const [a, b] = rcProf(y); return [x, y, b * Math.sqrt(Math.max(0, 1 - (x / a) ** 2))]; };
+  const outN = (l) => { const [a, b] = rcProf(l[1]); return chest.d(l[0] / (a * a), 0.15 * (l[1] - 0.02) / 0.03, l[2] / (b * b)); };
+  const band = (ptsL, w0, w1, t0, t1, opts) => {
+    for (let j = 0; j < ptsL.length - 1; j++) {
+      const u0 = j / (ptsL.length - 1), u1 = (j + 1) / (ptsL.length - 1);
+      const mid = lerp3(ptsL[j], ptsL[j + 1], 0.5);
+      P(new FlatCapsule(chest.p(...ptsL[j]), chest.p(...ptsL[j + 1]), w0 + (w1 - w0) * (u0 + u1) / 2, t0 + (t1 - t0) * (u0 + u1) / 2, outN(mid), opts));
+    }
+  };
+  const cartPath = (from, to, n = 5) => {
+    const pts = [];
+    for (let j = 0; j <= n; j++) {
+      const u = j / n;
+      const x = from[0] + (to[0] - from[0]) * u;
+      const y = from[1] + (to[1] - from[1]) * Math.pow(u, 0.8); // turns upward as it nears the sternum
+      pts.push(frontLocal(x, y));
+    }
+    pts[0] = from; return pts;
+  };
+  const ribEnd = (i) => (i <= 6 ? 0.79 : i <= 9 ? 0.71 - (i - 7) * 0.015 : i === 10 ? 0.56 : 0.44);
+  const sternTop = 0.158, sternBot = -0.048;
+  for (const sg of [1, -1]) {
+    const carts = [];
+    for (let i = 0; i < 12; i++) {
+      const thE = ribEnd(i), N = 9;
       const pts = [];
-      const N = 7;
-      for (let j = 0; j <= N; j++) {
-        const th = Math.PI * (0.1 + (thEnd - 0.1) * (j / N));
-        const y = h - 0.05 * Math.pow(th / Math.PI, 1.3) + (i < 6 && th > 0.75 * Math.PI ? 0.02 * (th / Math.PI - 0.75) : 0);
-        const e = Math.sqrt(Math.max(0.05, 1 - ((y - rc.cy) / rc.ry) ** 2));
-        const ax = rc.a * e + 0.002, bz = rc.b * e + 0.002;
-        pts.push(chest.p(s * ax * Math.sin(th), y, -bz * Math.cos(th)));
-      }
-      for (let j = 0; j < N; j++) {
-        const r1 = 0.0088 - 0.0025 * (j / N), r2 = 0.0088 - 0.0025 * ((j + 1) / N);
-        P(new RoundCone(pts[j], pts[j + 1], r1, r2, { bone: 'ribcage', k: 0.007, tag: 'rib' }));
+      for (let j = 0; j <= N; j++) pts.push(ribLocal(i, Math.PI * (0.13 + (thE - 0.13) * (j / N)), sg));
+      const w = i === 0 ? 0.0062 : 0.0082 - Math.max(0, i - 8) * 0.0008, t = 0.0042;
+      band(pts, w, w * 0.8, t, t * 0.85, { bone: 'ribcage', k: 0.011, tag: 'rib' });
+      if (i <= 9) {
+        const end = pts[pts.length - 1];
+        let target;
+        if (i <= 6) target = frontLocal(sg * 0.011, sternTop - 0.016 - i * 0.03);
+        else target = carts[i - 1][Math.round((carts[i - 1].length - 1) * (0.62 - (i - 7) * 0.1))];
+        const cp = cartPath(end, target, i <= 6 ? 4 : 5);
+        carts[i] = cp;
+        band(cp, w * 0.78, i <= 6 ? w * 0.7 : w * 0.62, 0.0034, 0.003, { bone: 'ribcage', k: 0.013, tag: 'rib' });
       }
     }
+    // serratus anterior: finger-like slips on the side ribs, below the armpit
+    for (let i = 4; i <= 8; i++) {
+      const pts = [0.47, 0.53, 0.6].map((f) => { const l = ribLocal(i, Math.PI * f, sg); return [l[0], l[1] - 0.013, l[2]]; });
+      band(pts, 0.0072, 0.005, 0.0042, 0.0034, { bone: 'ribcage', k: 0.012 });
+    }
   }
-  // sternum
-  P(new RoundCone(chest.p(0, 0.15, 0.084), chest.p(0, -0.055, 0.094), 0.012, 0.009, { bone: 'ribcage', k: 0.014 }));
+  // sternum: manubrium, body, xiphoid
+  P(new Ellipsoid(chest.p(...frontLocal(0, sternTop - 0.016)), [0.024, 0.021, 0.0062], chest.R, { bone: 'ribcage', k: 0.012, tag: 'rib' }));
+  band([frontLocal(0, sternTop - 0.035), frontLocal(0, 0.06), frontLocal(0, -0.01), frontLocal(0, sternBot)], 0.0125, 0.0105, 0.0056, 0.005, { bone: 'ribcage', k: 0.012, tag: 'rib' });
+  { const xb = frontLocal(0, sternBot), xt = frontLocal(0, sternBot - 0.026); xt[2] -= 0.004; P(new RoundCone(chest.p(...xb), chest.p(...xt), 0.0055, 0.0032, { bone: 'ribcage', k: 0.008, tag: 'rib' })); }
+  // a lump of healed bone on the left side
+  { const l = ribLocal(5, Math.PI * 0.62, 1); P(new Ellipsoid(chest.p(...l), [0.009, 0.007, 0.007], chest.R, { bone: 'ribcage', k: 0.008, tag: 'rib' })); }
+  // the fold of skin running from the breastbone into the armpit (all that is left of the pectorals)
+  for (const sg of [1, -1]) {
+    const L = sg > 0 ? 'L' : 'R';
+    P(new RoundCone(chest.p(sg * 0.07, 0.095, frontLocal(sg * 0.07, 0.095)[2] - 0.006), add(arms[L].S, [-sg * 0.018, -0.07, 0.022]), 0.0085, 0.0115, { bone: 'clavicle' + L, k: 0.02 }));
+  }
+  // jugular notch above the sternum
+  field.addPost(new Sphere(chest.p(...frontLocal(0, sternTop + 0.012)), 0.011, {}), 0.01);
   // shoulder blades
   for (const s of [1, -1]) {
     P(new Ellipsoid(chest.p(s * 0.072, 0.075, -0.088), [0.045, 0.062, 0.012], mmul(chest.R, mmul(rotY(-s * 0.55), rotZ(s * 0.25))), { bone: 'upperChest', k: 0.02 }));
@@ -140,7 +199,13 @@ export function defineCreature() {
   // collarbones + trapezius (hunched, sloping shoulders)
   for (const L of ['L', 'R']) {
     const { s, S } = arms[L];
-    P(new RoundCone(chest.p(s * 0.016, 0.165, 0.078), add(S, [-s * 0.025, 0.012, 0.012]), 0.0095, 0.012, { bone: 'clavicle' + L, k: 0.012 }));
+    {
+      const e0 = chest.p(s * 0.02, 0.168, 0.066), e3 = add(S, [-s * 0.022, 0.014, 0.006]);
+      const e1 = add(lerp3(e0, e3, 0.33), chest.d(0, 0.004, 0.012)), e2 = add(lerp3(e0, e3, 0.7), chest.d(0, 0.006, -0.008));
+      const cl = { bone: 'clavicle' + L, k: 0.012, tag: 'rib' };
+      P(new Sphere(e0, 0.0115, cl));
+      P(new RoundCone(e0, e1, 0.0095, 0.0082, cl)); P(new RoundCone(e1, e2, 0.0082, 0.0085, cl)); P(new RoundCone(e2, e3, 0.0085, 0.011, cl));
+    }
     P(new RoundCone(chest.p(s * 0.03, 0.24, 0.0), add(S, [-s * 0.04, 0.012, -0.02]), 0.03, 0.02, { bone: 'upperChest', k: 0.035 }));
   }
 
@@ -376,9 +441,6 @@ export function defineCreature() {
     const backL = [1.1, 1.17, 1.24, 1.31, 1.38].map((y) => snap([s * 0.031, y, -0.04], [s * 0.2, 0.05, -1], 0.012));
     const backU = [-0.13, -0.08, -0.03, 0.02].map((h) => snap(chest.p(s * 0.031, h, 0), chest.d(s * 0.2, 0.05, -1), 0.012));
     chain([...backL, ...backU], 0.016, 0.012, (p) => ({ bone: byY(p), k: 0.024 }));
-    // lower edge of the ribcage (costal margin) standing proud of the sunken belly
-    const costal = [0.0, 0.25, 0.5, 0.75].map((u) => snap(chest.p(s * (0.012 + u * 0.085), -0.1 - u * 0.045, 0), chest.d(s * u * 0.9, -0.15, 1), 0.005));
-    chain(costal, 0.0075, 0.0085, () => ({ bone: 'ribcage', k: 0.01 }));
   }
   for (const [y, w] of [[1.165, 0.05], [1.148, 0.042]]) {
     const pts = [-1, -0.5, 0, 0.5, 1].map((u) => snap([u * w * 0.5, y, -0.045], [u * 0.5, -0.05, 1], 0.0025));

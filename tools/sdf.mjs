@@ -254,3 +254,61 @@ export class Field {
     return [mn, mx];
   }
 }
+
+// Capsule with an elliptical cross-section: half-thickness t along n, half-width w across.
+// Used for flat bones (ribs, costal cartilage, sternum) that a round capsule makes look like pipes.
+export class FlatCapsule extends Prim {
+  constructor(a, b, w, t, n, opts) {
+    super(opts);
+    this.a = a; this.b = b; this.w = w; this.t = t;
+    this.ba = sub(b, a); this.l2 = dot(this.ba, this.ba) || 1e-12;
+    this.td = norm(this.ba);
+    this.nn = norm(sub(n, mul(this.td, dot(n, this.td))));
+    this.bb = cross(this.td, this.nn);
+    this.finalize();
+  }
+  bounds() {
+    const { a, b } = this; const r = Math.max(this.w, this.t);
+    return [[Math.min(a[0], b[0]) - r, Math.min(a[1], b[1]) - r, Math.min(a[2], b[2]) - r], [Math.max(a[0], b[0]) + r, Math.max(a[1], b[1]) + r, Math.max(a[2], b[2]) + r]];
+  }
+  dist(x, y, z) {
+    const { a, ba, l2, td, nn, bb, w, t } = this;
+    const px = x - a[0], py = y - a[1], pz = z - a[2];
+    const h = Math.min(Math.max((px * ba[0] + py * ba[1] + pz * ba[2]) / l2, 0), 1);
+    const qx = px - ba[0] * h, qy = py - ba[1] * h, qz = pz - ba[2] * h;
+    const u = qx * nn[0] + qy * nn[1] + qz * nn[2];
+    const v = qx * bb[0] + qy * bb[1] + qz * bb[2];
+    const e = qx * td[0] + qy * td[1] + qz * td[2]; // non-zero only past the ends: rounded caps
+    const k0 = Math.hypot(u / t, v / w, e / w);
+    const k1 = Math.hypot(u / (t * t), v / (w * w), e / (w * w));
+    if (k1 < 1e-9) return -Math.min(t, w);
+    return (k0 * (k0 - 1)) / k1;
+  }
+}
+
+// A body of elliptical cross-section whose half-width a(y) and half-depth b(y) vary with height,
+// in a local frame. prof(y) -> [a, b]. Capped flat at y0..y1 (the caps are buried in other shapes).
+export class ProfiledBody extends Prim {
+  constructor(frame, y0, y1, prof, opts) {
+    super(opts);
+    this.f = frame; this.y0 = y0; this.y1 = y1; this.prof = prof;
+    this.Ri = mT(frame.R);
+    let m = 0; for (let y = y0; y <= y1; y += 0.01) m = Math.max(m, ...prof(y));
+    this.rad = Math.hypot(m, Math.max(Math.abs(y0), Math.abs(y1)));
+    this.finalize();
+  }
+  bounds() { const c = this.f.o, r = this.rad; return [[c[0] - r, c[1] - r, c[2] - r], [c[0] + r, c[1] + r, c[2] + r]]; }
+  dist(x, y, z) {
+    const R = this.Ri, o = this.f.o;
+    const dx = x - o[0], dy = y - o[1], dz = z - o[2];
+    const lx = R[0] * dx + R[1] * dy + R[2] * dz;
+    const ly = R[3] * dx + R[4] * dy + R[5] * dz;
+    const lz = R[6] * dx + R[7] * dy + R[8] * dz;
+    const yc = Math.min(Math.max(ly, this.y0), this.y1);
+    const [a, b] = this.prof(yc);
+    const k0 = Math.hypot(lx / a, lz / b), k1 = Math.hypot(lx / (a * a), lz / (b * b));
+    const dr = k1 < 1e-9 ? -Math.min(a, b) : (k0 * (k0 - 1)) / k1;
+    const dc = Math.max(this.y0 - ly, ly - this.y1);
+    return dc > 0 ? (dr > 0 ? Math.hypot(dr, dc) : dc) : dr;
+  }
+}
