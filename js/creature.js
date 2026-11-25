@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { NOISE_GLSL } from './noise.glsl.js';
 import { Animator } from './anim.js';
 
@@ -255,6 +256,17 @@ async function fetchEmbeddedGltfAsGlb(url, onProgress) {
 
 // ------------------------------------------------------------------ creature
 export class Creature {
+  // Load the model once and spawn any number of independent creatures from it.
+  static loadShared(url, onProgress) {
+    Creature._shared ??= Creature.loadGLTF(url, onProgress);
+    return Creature._shared;
+  }
+  static spawn(gltf) { return new Creature({ scene: cloneSkinned(gltf.scene) }); }
+  static async loadGLTF(url, onProgress) {
+    const loader = new GLTFLoader();
+    if (/\.json$|\.gltf$/i.test(new URL(url, location.href).pathname)) return loader.parseAsync(await fetchEmbeddedGltfAsGlb(url, onProgress), '');
+    return loader.loadAsync(url, (e) => onProgress?.(e.total ? e.loaded / e.total : 0));
+  }
   static async load(url, onProgress) {
     const loader = new GLTFLoader();
     // JSON .gltf with an embedded base64 buffer: decode it here and hand the loader a GLB in memory.

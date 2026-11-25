@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>The Tall One</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" />
   <script type="importmap">
     {
       "imports": {
@@ -13,73 +16,68 @@
     }
   </script>
   <style>
-    /* one dark visual world: a pitch-black room, so the page commits to a single dark look */
-    :root { --fg: #cfc7b8; --dim: #6f685d; --bg: #020203; --accent: #8a1c14; --line: #2a2622; --line-hi: #4a4239; --panel: rgba(8, 7, 6, 0.72); --panel-on: rgba(60, 14, 10, 0.78); color-scheme: dark; }
+    /* one dark visual world (a facility at night), so the page commits to a single dark look */
+    :root {
+      --bg: #020304; --ui-fg: #dfe6e6; --ui-dim: #7d8a8c; --ui-accent: #3fb8b0; --ui-red: #b3261e;
+      --line: #22302f; --line-hi: #3e5655; --panel: rgba(6, 10, 11, 0.74); --panel-on: rgba(20, 60, 58, 0.8);
+      --ui-font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --ui-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      color-scheme: dark;
+    }
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; font-family: "Courier New", ui-monospace, monospace; -webkit-user-select: none; user-select: none; }
-    canvas { display: block; touch-action: none; position: fixed; inset: 0; }
-    #intro { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0a0908 0%, #000 70%); transition: opacity 1.2s; z-index: 5; padding: 16px; }
-    #intro.gone { opacity: 0; pointer-events: none; }
-    .card { max-width: 520px; text-align: center; }
-    h1 { font-weight: normal; letter-spacing: 0.5em; font-size: clamp(22px, 5vw, 34px); margin: 0 0 0.4em; color: #d8cfc0; text-shadow: 0 0 18px rgba(138, 28, 20, 0.5); }
-    .sub { color: var(--dim); font-size: 13px; letter-spacing: 0.15em; margin-bottom: 2.2em; }
-    #loading { width: 220px; height: 2px; background: #1a1714; margin: 0 auto 1.6em; transition: opacity 0.6s; }
-    #loading.done { opacity: 0; }
-    #bar { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
-    #enter { font: inherit; color: var(--dim); background: none; border: 1px solid var(--line); padding: 12px 28px; letter-spacing: 0.3em; cursor: default; opacity: 0.4; transition: all 0.4s; }
-    #enter.ready { opacity: 1; color: var(--fg); cursor: pointer; border-color: var(--line-hi); }
-    #enter:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
-    #enter.ready:hover { border-color: var(--accent); color: var(--fg); }
-    .keys { margin-top: 2.2em; font-size: 12px; color: var(--dim); line-height: 1.9; }
-    .keys b { color: var(--fg); font-weight: normal; }
-    #status { color: #c55; font-size: 12px; margin-top: 1em; min-height: 1em; }
-    #hud { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); font-size: 11px; color: rgba(207, 199, 184, 0.55); letter-spacing: 0.08em; line-height: 1.7; transition: opacity 2s; z-index: 3; pointer-events: none; }
-    #hud.faded { opacity: 0.15; }
-    #hud.hidden { opacity: 0; }
-    .touch-only { display: none; }
-    body.touch .touch-only { display: block; }
-    body.touch .desk-only { display: none; }
-    #btns { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: none; gap: 10px; z-index: 4; }
-    body.touch #btns { display: flex; }
-    #btns button { font: inherit; font-size: 12px; color: var(--fg); background: rgba(10, 9, 8, 0.6); border: 1px solid #3a342e; padding: 12px 14px; letter-spacing: 0.15em; }
-    #actions { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: calc(14px + env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 4px; z-index: 4; max-height: calc(100% - 28px); overflow-y: auto; }
-    #actions .title { font-size: 10px; letter-spacing: 0.25em; color: var(--dim); margin: 0 0 4px 2px; }
-    #actions button { font: inherit; font-size: 12px; letter-spacing: 0.06em; color: var(--fg); background: var(--panel); border: 1px solid var(--line); padding: 7px 12px 7px 8px; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 9px; min-width: 150px; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ui-fg); overflow: hidden; font-family: var(--ui-font); -webkit-user-select: none; user-select: none; }
+    canvas.game { display: block; touch-action: none; position: fixed; inset: 0; }
+
+    #menu { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: radial-gradient(ellipse at 50% 40%, #0b1213 0%, #020304 70%); transition: opacity 1s; }
+    #menu.gone { opacity: 0; pointer-events: none; }
+    #menu .card { width: min(520px, 100%); text-align: center; }
+    #menu .org { font: 500 11px/1 var(--ui-mono); letter-spacing: 0.42em; color: var(--ui-accent); margin-bottom: 26px; }
+    #menu h1 { font: 300 clamp(30px, 7vw, 54px)/1.05 var(--ui-font); letter-spacing: 0.34em; margin: 0 0 10px; text-indent: 0.34em; }
+    #menu .sub { font: 400 12px/1.7 var(--ui-mono); letter-spacing: 0.18em; color: var(--ui-dim); margin-bottom: 34px; }
+    #menu .load { width: 200px; height: 2px; background: #142021; margin: 0 auto 28px; transition: opacity 0.6s; }
+    #menu .load.done { opacity: 0; }
+    #bar { height: 100%; width: 0; background: var(--ui-accent); transition: width 0.2s; }
+    #menu .opts { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+    #menu button { font: 500 12px/1 var(--ui-mono); letter-spacing: 0.3em; color: var(--ui-dim); background: none; border: 1px solid var(--line); padding: 14px 0; width: 260px; max-width: 100%; cursor: default; opacity: 0.45; transition: all 0.3s; }
+    #menu.ready button { opacity: 1; color: var(--ui-fg); cursor: pointer; border-color: var(--line-hi); }
+    #menu.ready button:hover, #menu.ready button:focus-visible { border-color: var(--ui-accent); color: #fff; outline: none; }
+    #menu .keys { margin-top: 30px; font: 400 11px/2 var(--ui-mono); color: var(--ui-dim); letter-spacing: 0.06em; }
+    #menu .keys b { color: var(--ui-fg); font-weight: 500; }
+    #status { color: #d0605a; font: 400 12px/1.4 var(--ui-mono); margin-top: 16px; min-height: 1em; }
+
+    /* creature study panel */
+    #actions { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: calc(14px + env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 4px; z-index: 12; max-height: calc(100% - 28px); overflow-y: auto; }
+    #actions .title { font: 600 10px/1 var(--ui-mono); letter-spacing: 0.25em; color: var(--ui-dim); margin: 0 0 4px 2px; }
+    #actions button { font: 500 12px/1 var(--ui-mono); letter-spacing: 0.06em; color: var(--ui-fg); background: var(--panel); border: 1px solid var(--line); padding: 7px 12px 7px 8px; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 9px; min-width: 150px; }
     #actions button:hover { border-color: var(--line-hi); }
-    #actions button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
-    #actions button.on { border-color: var(--accent); color: var(--fg); background: var(--panel-on); }
-    #actions kbd { font: inherit; font-size: 10px; color: var(--dim); border: 1px solid var(--line); min-width: 18px; text-align: center; padding: 1px 3px; }
-    body.touch #actions button { min-width: 0; padding: 9px 10px; }
-    body.touch #actions kbd { display: none; }
-    #stick { position: fixed; width: 110px; height: 110px; margin: -55px 0 0 -55px; border: 1px solid rgba(207, 199, 184, 0.2); border-radius: 50%; display: none; z-index: 4; pointer-events: none; }
-    #stick.on { display: block; }
-    #knob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(207, 199, 184, 0.18); }
+    #actions button:focus-visible { outline: 1px solid var(--ui-accent); outline-offset: 1px; }
+    #actions button.on { border-color: var(--ui-accent); background: var(--panel-on); }
+    #actions kbd { font: inherit; font-size: 10px; color: var(--ui-dim); border: 1px solid var(--line); min-width: 18px; text-align: center; padding: 1px 3px; }
+    body.touch #actions { top: auto; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); right: auto; left: 50%; transform: translateX(-50%); flex-direction: row; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); }
+    body.touch #actions button { min-width: 0; padding: 8px 9px; }
+    body.touch #actions kbd, body.touch #actions .title { display: none; }
+    @media (prefers-reduced-motion: reduce) { #menu, #menu button { transition: none; } }
   </style>
 </head>
 <body>
-  <div id="intro">
+  <div id="menu">
     <div class="card">
+      <div class="org">HALVERSEN BIOCONTAINMENT · SITE 41</div>
       <h1>THE TALL ONE</h1>
-      <div class="sub">creature study &mdash; room 0</div>
-      <div id="loading"><div id="bar"></div></div>
-      <button id="enter">ENTER</button>
-      <div class="keys desk-only">
-        <b>WASD</b> move &nbsp; <b>mouse</b> look &nbsp; <b>shift</b> run<br />
-        <b>F</b> flashlight &nbsp; <b>L</b> work light (inspect) &nbsp; <b>P</b> freeze &nbsp; <b>H</b> hide text<br />
-        <b>1&ndash;0</b> creature actions &nbsp; <b>R</b> reset &nbsp; (<b>Esc</b> frees the mouse to click the panel)
+      <div class="sub">a containment incident in five parts</div>
+      <div class="load"><div id="bar"></div></div>
+      <div class="opts">
+        <button type="button" data-level="intro">BEGIN · PROLOGUE</button>
+        <button type="button" data-level="test">CREATURE STUDY</button>
       </div>
-      <div class="keys touch-only">left thumb: walk &nbsp; right thumb: look</div>
+      <div class="keys">
+        <b>WASD</b> move · <b>mouse</b> look · <b>shift</b> run · <b>C</b> crouch · <b>E</b> use<br />
+        <b>F</b> flashlight · <b>right mouse / Q</b> halide lamp · headphones recommended
+      </div>
       <div id="status"></div>
     </div>
   </div>
-  <div id="hud">
-    <span class="desk-only">WASD move · mouse look · F flashlight · L work light · P freeze · H hide · number keys or Esc + click: creature actions</span>
-    <span class="touch-only">left: walk · right: look</span>
-  </div>
-  <div id="actions" aria-label="Creature actions"><div class="title">CREATURE</div></div>
-  <div id="btns"><button id="btnFlash">LIGHT</button><button id="btnWork">INSPECT</button></div>
-  <div id="stick"><div id="knob"></div></div>
   <script type="module" src="./js/main.js"></script>
 </body>
 </html>

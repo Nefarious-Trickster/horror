@@ -193,12 +193,12 @@ export class Animator {
     return s;
   }
 
-  play(name) {
+  play(name, opts = {}) {
     const A = ACTIONS[name];
     if (!A) return;
     if (name === 'reset') { this.reset(); return; }
     this.actionName = name;
-    this.action = new A(this);
+    this.action = new A(this, opts);
     this.onAction?.(name);
   }
   reset() {
@@ -403,13 +403,14 @@ function nearestIndex(a, pts) {
 
 // ------------------------------------------------------------------ actions
 class Idle {
+  constructor(a, opts = {}) { this.o = opts; }
   update(dt, a, P) {
     const reach = smooth(0.35, 0.9, P.near);
     P.rot.hips = [0, vnoise(a.t * 0.2, 1) * 0.02, 0.035 + vnoise(a.t * 0.17, 2) * 0.012];
     P.rot.spine = [0.03 * P.near, 0, 0]; P.rot.chest = [0.05 * P.near, 0, 0]; P.rot.upperChest = [0.08 * P.near, 0, 0];
     armsHang(P, reach, vnoise(a.t * 0.35, 5) * 0.03);
     P.open = smooth(0.2, 0.8, P.near);
-    P.rate = 1.6; P.gaze = 'wander'; P.twitchiness = 0.08;
+    P.rate = 1.6; P.gaze = this.o.stare ? 'player' : 'wander'; P.lookFreq = this.o.stare ? 0.45 : undefined; P.twitchiness = 0.08;
   }
 }
 
@@ -543,12 +544,12 @@ class Leap {
   // Readable from across the room: it squares up to you, sinks into a deep coil and holds
   // perfectly still, then explodes into a flat ballistic pounce, lands heavily on all four
   // limbs, and takes its time rising, eyes on you the whole way.
-  constructor() { this.t = 0; this.phase = 'turn'; }
+  constructor(a, opts = {}) { this.t = 0; this.phase = 'turn'; this.opts = opts; }
   aim(a) {
-    const p = a.ctx.camera.position, r = a.root.position;
+    const p = this.opts.to || a.ctx.camera.position, r = a.root.position;
     const d = Math.hypot(p.x - r.x, p.z - r.z);
     this.yaw = d > 0.5 ? a.yawTo(p.x, p.z) : a.heading;
-    const L = clamp(d - 1.3, 1.2, 4.6);
+    const L = this.opts.to ? d : clamp(d - 1.3, 1.2, 4.6);
     const { min, max } = a.world.bounds;
     this.from = r.clone();
     this.to = new THREE.Vector3(clamp(r.x + Math.sin(this.yaw) * L, min.x + 0.6, max.x - 0.6), 0, clamp(r.z + Math.cos(this.yaw) * L, min.z + 0.6, max.z - 0.6));
@@ -601,7 +602,7 @@ class Leap {
         R: hp.clone().addScaledVector(side, -0.16).addScaledVector(fwd, -0.85 + 0.45 * u).add(new THREE.Vector3(0, -0.45 - 0.4 * u, 0)),
       };
       P.footPitch = 1.4 - u; P.rate = this.t < 0.08 ? 22 : 9; P.open = 1.4; P.jaw = 0.85; P.lookFreq = 3;
-      if (u >= 1) { this.phase = 'land'; this.t = 0; a.gait.reset(GAITS.stand); a.shake += 1.2; a.hipsCur.y = -0.6; }
+      if (u >= 1) { this.phase = 'land'; this.t = 0; a.gait.reset(GAITS.stand); a.shake += 1.2; a.hipsCur.y = -0.6; this.opts.onImpact?.(); }
     } else if (this.phase === 'land') {
       // absorbs the impact deep, palms down on the floor in front of it
       coil(P, 1.15);
@@ -613,7 +614,7 @@ class Leap {
     } else {
       coil(P, 1 - smooth(0, 1.6, this.t));
       P.rate = 1.8; P.open = 0.8; P.lookFreq = 0.6; P.breathe = 1.4;
-      if (this.t > 2.2) return 'idle';
+      if (this.t > 2.2) { if (this.opts.then) { a.play(...[].concat(this.opts.then)); return; } return 'idle'; }
     }
   }
 }
@@ -694,7 +695,7 @@ class BreakDoor {
   constructor(a) {
     this.phase = 'approach'; this.t = 0; this.hits = 0;
     const d = a.world.door;
-    this.spot = { x: d.position.x, z: d.position.z + 0.85 };
+    this.spot = { x: d.position.x + d.normal.x * 0.85, z: d.position.z + d.normal.z * 0.85 };
     this.face = Math.atan2(-d.normal.x, -d.normal.z);
   }
   update(dt, a, P) {
@@ -759,9 +760,130 @@ function walkPose(a, P) {
   P.rate = 6; P.armRate = 3.5; P.open = 0.1;
 }
 
+// ------------------------------------------------------------------ story actions
+// Stands with its face to the wall, perfectly still, head bowed. (opts.yaw = direction to face)
+class FaceWall {
+  constructor(a, opts = {}) { this.yaw = opts.yaw ?? a.heading; this.t = 0; }
+  update(dt, a, P) {
+    this.t += dt;
+    a.turnTo(this.yaw, 0.7, dt);
+    P.rot.hips = [0.02, 0, 0.03]; P.rot.spine = [0.06, 0, 0]; P.rot.upperChest = [0.12, 0, 0];
+    armsHang(P, 0);
+    P.scan = { yaw: 0, pitch: -0.55 }; P.lookFreq = 0.35; P.rate = 1.2; P.breathe = 0.5; P.jaw = 0.06;
+  }
+}
+// Hunkered low in a corner, arms folded down in front of it.
+class Crouch {
+  constructor(a, opts = {}) { this.yaw = opts.yaw; }
+  update(dt, a, P) {
+    if (this.yaw != null) a.turnTo(this.yaw, 0.8, dt);
+    P.gait = GAITS.stalk;
+    P.hips = [0, -0.62, -0.05];
+    P.rot.hips = [0.75, 0, 0]; P.rot.spine = [0.3, 0, 0]; P.rot.chest = [0.15, 0, 0]; P.rot.upperChest = [0.1, 0, 0];
+    for (const [L, s] of [['L', 1], ['R', -1]]) {
+      P.rot['clavicle' + L] = [0, 0, s * 0.05];
+      P.rot['upperArm' + L] = [-0.55, 0, s * 0.12]; P.rot['forearm' + L] = [-0.9, 0, 0]; P.rot['hand' + L] = [0.6, 0, 0];
+    }
+    P.open = 0.4; P.rate = 1.5; P.gaze = 'wander'; P.breathe = 0.8;
+  }
+}
+// Walks (or crawls) to a point, then optionally turns and hands over to another action.
+// opts: { x, z, speed, crawl, face (yaw), then: ['name', opts] | 'name' }
+class Goto {
+  constructor(a, opts) { this.o = opts; this.done = false; this.t = 0; }
+  update(dt, a, P) {
+    const o = this.o;
+    if (!this.done) {
+      const d = a.moveToward(o.x, o.z, o.speed ?? (o.crawl ? 0.8 : 0.9), dt, o.crawl ? 1.4 : 1.8);
+      if (d < 0.15) this.done = true;
+    } else {
+      this.t += dt;
+      const err = o.face != null ? a.turnTo(o.face, 1.4, dt) : 0;
+      if (err < 0.05 && this.t > 0.4 && o.then) { a.play(...[].concat(o.then)); return; }
+    }
+    if (o.crawl) crawlPose(a, P, a.gait.phase * TAU); else walkPose(a, P);
+    if (this.done && !o.crawl) { P.gait = GAITS.stand; armsHang(P, 0); P.rot.hips = [0.05, 0, 0.03]; }
+    if (o.lookAtPlayer) P.gaze = 'player';
+    if (o.crawl && o.speed > 1.2) P.gait = { ...GAITS.crawl, stepTime: 0.24, stride: 0.95, trigger: 0.4 };
+  }
+}
+// Turns away from a harsh light with a forearm thrown over its eyes, backing off a little.
+class Shield {
+  constructor(a, opts = {}) { this.t = 0; this.from = opts.from; this.dur = opts.dur ?? 4; }
+  update(dt, a, P) {
+    this.t += dt;
+    const u = smooth(0, 0.6, this.t);
+    if (this.from && this.t < 1.6) { const away = Math.atan2(a.root.position.x - this.from.x, a.root.position.z - this.from.z); a.moveToward(a.root.position.x + Math.sin(away) * 0.6, a.root.position.z + Math.cos(away) * 0.6, 0.45, dt, 1.2); }
+    P.hips = [0, -0.18 * u, -0.04 * u];
+    P.rot.hips = [0.15 * u, 0.25 * u, 0]; P.rot.spine = [0.2 * u, 0.2 * u, 0]; P.rot.upperChest = [0.15 * u, 0.2 * u, 0];
+    P.rot.clavicleR = [0, 0, -0.25 * u]; P.rot.upperArmR = [-2.0 * u, 0.3 * u, -0.5 * u]; P.rot.forearmR = [-1.7 * u, 0, 0]; P.rot.handR = [0.4 * u, 0, 0.3 * u];
+    P.rot.clavicleL = [0, 0, 0.05]; P.rot.upperArmL = [-0.25 * u, 0, 0.15]; P.rot.forearmL = [-0.5 * u, 0, 0];
+    P.scan = { yaw: -0.9 * u, pitch: -0.5 * u }; P.lookFreq = 1.2; P.rate = 4; P.open = 0.9; P.jaw = 0.3 * u; P.tremble = 0.25 * u;
+    if (this.t > this.dur) return 'idle';
+  }
+}
+// Hit by the strobe: a violent flinch, then it staggers back a step.
+class Recoil {
+  constructor(a, opts = {}) { this.t = 0; this.o = opts; a.shake += 0.2; }
+  update(dt, a, P) {
+    this.t += dt;
+    const p = this.o.from || a.ctx.camera.position;
+    const away = Math.atan2(a.root.position.x - p.x, a.root.position.z - p.z);
+    if (this.t < 0.6) { const r = a.root.position; r.x += Math.sin(away) * 1.2 * dt; r.z += Math.cos(away) * 1.2 * dt; }
+    const hit = 1 - smooth(0.0, 0.9, this.t) * 0.6;
+    P.hips = [0, -0.22 * hit, -0.1 * hit];
+    P.rot.hips = [-0.2 * hit, 0, 0]; P.rot.spine = [-0.25 * hit, 0, 0]; P.rot.upperChest = [-0.2 * hit, 0, 0];
+    for (const [L, s] of [['L', 1], ['R', -1]]) {
+      P.rot['clavicle' + L] = [0, 0, s * 0.3 * hit];
+      P.rot['upperArm' + L] = [-1.7 * hit, 0, s * 0.4 * hit]; P.rot['forearm' + L] = [-1.6 * hit, 0, 0]; P.rot['hand' + L] = [0.4, 0, 0];
+    }
+    P.scan = { yaw: 0.6 * Math.sign(Math.sin(this.t * 9)), pitch: -0.45 }; P.lookFreq = 3;
+    P.rate = this.t < 0.12 ? 25 : 5; P.open = 1.4; P.jaw = 0.8 * hit; P.tremble = 0.9 * hit;
+    if (this.t > (this.o.dur ?? 1.1)) { if (this.o.then) { a.play(...[].concat(this.o.then)); return; } return 'idle'; }
+  }
+}
+// Backs away to a point while keeping its face toward you.
+class Retreat {
+  constructor(a, opts) { this.o = opts; this.t = 0; }
+  update(dt, a, P) {
+    this.t += dt;
+    const o = this.o, r = a.root.position;
+    const dx = o.x - r.x, dz = o.z - r.z, d = Math.hypot(dx, dz);
+    if (d > 0.08) { const st = Math.min(d, (o.speed ?? 0.85) * dt); r.x += dx / d * st; r.z += dz / d * st; }
+    const p = a.ctx.camera.position;
+    a.turnTo(o.face ?? a.yawTo(p.x, p.z), 1.2, dt);
+    P.gait = GAITS.stalk;
+    P.hips = [0, -0.25, 0]; P.rot.hips = [0.3, 0, 0]; P.rot.spine = [0.15, 0, 0]; P.rot.upperChest = [0.1, 0, 0];
+    for (const [L, s] of [['L', 1], ['R', -1]]) { P.rot['upperArm' + L] = [-0.5, 0, s * 0.25]; P.rot['forearm' + L] = [-0.7, 0, 0]; P.rot['hand' + L] = [0.4, 0, 0]; }
+    P.gaze = 'player'; P.lookFreq = 0.8; P.rate = 3; P.open = 1; P.jaw = 0.3;
+    if (d <= 0.08 && this.t > 0.3) { if (o.then) { a.play(...[].concat(o.then)); return; } return 'idle'; }
+  }
+}
+// The kill: rears up and drives both claws down at you. opts.onHit fires on contact.
+class Attack {
+  constructor(a, opts = {}) { this.t = 0; this.o = opts; this.hit = false; }
+  update(dt, a, P) {
+    this.t += dt;
+    const p = a.ctx.camera.position;
+    a.turnTo(a.yawTo(p.x, p.z), 4, dt);
+    const rear = smooth(0, 0.45, this.t), strike = smooth(0.5, 0.68, this.t);
+    if (this.t > 0.5 && this.t < 0.7) a.moveToward(p.x, p.z, 2.2, dt, 4, 0.55);
+    P.hips = [0, -0.1 * rear + 0.08, 0.05 * strike];
+    P.rot.hips = [0.1 + 0.25 * strike, 0, 0]; P.rot.spine = [-0.2 * rear + 0.45 * strike, 0, 0]; P.rot.upperChest = [-0.15 * rear + 0.35 * strike, 0, 0];
+    for (const [L, s] of [['L', 1], ['R', -1]]) {
+      P.rot['clavicle' + L] = [0, 0, s * 0.35 * rear];
+      P.rot['upperArm' + L] = [-2.6 * rear + 2.0 * strike, 0, s * (0.4 - 0.2 * strike)]; P.rot['forearm' + L] = [-0.6 + 0.4 * strike, 0, 0]; P.rot['hand' + L] = [0.4, 0, 0];
+    }
+    P.gaze = 'player'; P.lookFreq = 4; P.rate = this.t > 0.5 ? 20 : 5; P.open = 1.5; P.jaw = 1; P.tremble = 0.4;
+    if (!this.hit && this.t > 0.66) { this.hit = true; a.shake += 1.5; this.o.onHit?.(); }
+    if (this.t > 2) return 'idle';
+  }
+}
+
 const ACTIONS = {
   idle: Idle, walk: Walk, stalk: Stalk, crawl: Crawl, chase: Chase, leap: Leap,
   lookAround: LookAround, breakDoor: BreakDoor, scream: Scream, convulse: Convulse, reset: Idle,
+  faceWall: FaceWall, crouch: Crouch, goto: Goto, shield: Shield, recoil: Recoil, retreat: Retreat, attack: Attack,
 };
 export const ACTION_LIST = [
   ['idle', 'Idle', '1'], ['walk', 'Walk', '2'], ['stalk', 'Stalk', '3'], ['crawl', 'Crawl', '4'], ['chase', 'Chase', '5'],

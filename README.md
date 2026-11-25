@@ -1,6 +1,11 @@
 # The Tall One
 
-A horror game in progress. Step one: the monster. This build is a **creature study**: one ruined basement room you can walk around in, with the creature standing in the corner under a flickering bulb.
+A first-person horror game in a private biocontainment facility. You work the C-14 rotation at Halversen Site 41. Two specimens breach containment; you recapture one, and the second disappears into the unfinished Wing D. The game has a prologue, five chapters and several endings. The story bible is in [docs/STORY.md](docs/STORY.md).
+
+**Built so far:**
+- **Prologue (Intake):** fully playable.
+- **Creature study:** a room for watching the monster's animations.
+- **Chapters 1 to 5:** in development.
 
 ## Run it
 
@@ -8,19 +13,20 @@ A horror game in progress. Step one: the monster. This build is a **creature stu
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. It needs a WebGL2 browser with internet access (three.js loads from jsDelivr).
+Then open <http://localhost:8000>. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
 
 | Input | Action |
 | --- | --- |
 | WASD / arrows | walk |
 | Mouse | look (click to capture; click-drag also works) |
 | Shift | run |
-| F | flashlight on/off |
-| L | work light: bright, neutral inspection light for studying the model |
-| P | freeze the creature |
-| H | hide the help text |
-| 1–0, R | make the creature perform (see below); Esc frees the mouse so you can click the panel instead |
-| Touch | left thumb walks, right thumb looks |
+| C | crouch |
+| E | use / interact |
+| F | flashlight |
+| Right mouse / Q | flash the halide lamp (once you have it) |
+| Touch | left thumb walks, right thumb looks; on-screen buttons for use, flash, light and crouch |
+
+In the creature study you can also use: L inspection light, P freeze, and the number keys 1–0 and R for the actions below (Esc frees the mouse so you can click the panel instead).
 
 ### Creature actions (test panel, top right)
 
@@ -81,13 +87,25 @@ Everything in the room is procedural too: shader-generated tiles, peeling paint,
 ## Layout
 
 ```
-index.html            entry page (import map → three@0.170.0)
-js/main.js            renderer, player controller, lights, loop
-js/creature.js        creature loader, skin shader, teeth, eyes, claws
-js/anim.js            procedural animation: actions, gait planner, IK, gaze
-js/room.js            room geometry + procedural surface shaders + dust
-js/post.js            post-processing chain
-js/noise.glsl.js      shared GLSL noise
-tools/                creature generator (Node, no dependencies)
-assets/creature.glb   generated model
+index.html              entry page: title menu, import map → three@0.170.0
+js/main.js              boots the game, menu, level loading
+js/engine/              game core: input, player, UI, interaction, story director, asset loading
+js/levels/intro.js      the prologue: Wing C lab, specimens, tests, breach, recapture
+js/levels/testroom.js   creature study room
+js/lab/architecture.js  Wing C building (walls, floors, cells, glass), merged per material
+js/lab/props.js         procedural lab equipment (consoles, desks, doors, benches, signs...)
+js/creature.js          creature loader, skin shader, teeth, eyes, claws
+js/anim.js              procedural animation: actions, gait planner, IK, gaze
+js/audio.js             synthesized sound: ambience, music, creature voice, radio, effects
+js/room.js              the creature study room's procedural surfaces
+js/post.js              post-processing chain (clinical and horror grades)
+js/save.js              local progress / story choices
+docs/STORY.md           story bible: chapters, endings, tracked choices
+tools/                  creature generator, asset fetcher
+assets/                 creature model, CC0 textures (ambientCG), HDRI (Poly Haven)
 ```
+
+## Assets and credits
+
+- The creature, lab equipment, sound and room surfaces are generated in code.
+- Textures come from [ambientCG](https://ambientcg.com), and the hospital lighting environment from [Poly Haven](https://polyhaven.com). Both are CC0, and `tools/fetch_assets.py` re-downloads them.
