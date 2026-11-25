@@ -342,7 +342,7 @@ export async function intro(game, opts = {}) {
   game.camera.add(lamp.light, lamp.light.target);
   function giveLamp() {
     lamp.has = true; lampOnRack.visible = false;
-    lamp.view = lampModel; lamp.view.position.set(0.24, -0.25, -0.42); lamp.view.rotation.set(0.05, 0.08, 0);
+    lamp.view = lampModel; lamp.view.position.set(0.27, -0.29, -0.5); lamp.view.scale.setScalar(0.85); lamp.view.rotation.set(0.05, 0.1, 0);
     lamp.view.traverse((o) => { o.castShadow = false; });
     game.camera.add(lamp.view);
     ui.lampMeter(true, lamp.charge, lamp.cells);
@@ -374,7 +374,7 @@ export async function intro(game, opts = {}) {
     ui.lampMeter(true, lamp.charge, lamp.cells);
     if (game.input.wasPressed('Mouse2', 'KeyQ')) flash();
     // view model sway
-    const t = game.time; lamp.view.position.y = -0.25 + Math.sin(t * 1.6) * 0.004 + Math.sin(player.bob * 2) * 0.006;
+    const t = game.time; lamp.view.position.y = -0.29 + Math.sin(t * 1.6) * 0.004 + Math.sin(player.bob * 2) * 0.006;
   }
 
   // ---------------------------------------------------------------- state & helpers
