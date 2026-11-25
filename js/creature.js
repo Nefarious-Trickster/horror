@@ -329,7 +329,13 @@ export class Creature {
     const { near } = this.anim.update(dt, ctx);
     const t = this.anim.t;
     this.object.updateMatrixWorld(true);
-    for (const e of this.eyes) e.lookAt(ctx.camera.position);
+    // eyes follow the head; they only lock onto you when it has decided to look at you
+    if (this.anim.eyesOnPlayer) for (const e of this.eyes) e.lookAt(ctx.camera.position);
+    else {
+      const hq = this.bone.head.getWorldQuaternion(new THREE.Quaternion());
+      const ahead = new THREE.Vector3(...this.extras.headForward).applyQuaternion(hq).multiplyScalar(4).add(this.bone.head.getWorldPosition(new THREE.Vector3()));
+      for (const e of this.eyes) e.lookAt(ahead);
+    }
 
     // eyeshine: a reflective tapetum that only shows when your light is on it
     let shine = 0;

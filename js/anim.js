@@ -214,7 +214,7 @@ export class Animator {
   update(dt, ctx) {
     this.ctx = ctx; this.t += dt;
     const t = this.t, B = this.B;
-    const P = { rot: {}, hips: [0, 0, 0], rate: 5, armRate: null, look: 1, lookAt: null, scan: null, lookFreq: null, jaw: null, open: 0, gait: GAITS.stand, feet: null, tremble: 0, breathe: 1, twitchiness: 1 };
+    const P = { rot: {}, hips: [0, 0, 0], rate: 5, armRate: null, look: 1, gaze: 'forward', lookAt: null, scan: null, lookFreq: null, pitchBias: 0, jaw: null, open: 0, gait: GAITS.stand, feet: null, tremble: 0, breathe: 1, twitchiness: 0 };
     P.near = 1 - smooth(1.1, 3.6, this.distToPlayer());
     const res = this.action.update(dt, this, P);
     if (res && typeof res === 'string') this.play(res);
@@ -228,7 +228,7 @@ export class Animator {
     this.breath += dt * (0.2 + P.near * 0.35 + P.breathe * 0.1) * (1 + 0.35 * vnoise(t * 0.3, 3)) * TAU;
     const br = Math.pow(Math.sin(this.breath) * 0.5 + 0.5, 1.6) * P.breathe;
     this.tremble = damp(this.tremble, P.tremble, 6, dt);
-    if (Math.random() < dt * (0.25 + P.near * 1.2) * P.twitchiness) {
+    if (Math.random() < dt * P.twitchiness) {
       const r = Math.random();
       if (r < 0.4) this.kick('head', ['x', 'y', 'z'][Math.random() * 3 | 0], rand(-0.16, 0.16));
       else if (r < 0.55) this.kick('neck2', 'y', rand(-0.1, 0.1));
@@ -320,31 +320,38 @@ export class Animator {
     return { near: P.near };
   }
 
+  // Where it looks is a decision, not a reflex. Modes:
+  //   'forward' (default) — where it is going; 'player' — locks onto you, deliberately;
+  //   'point' — P.lookAt; 'wander' — idle: slow looks around the room, now and then a long stare at you.
   updateGaze(dt, P) {
     const G = this.gaze, B = this.B, t = this.t;
     const headPos = B.head.getWorldPosition(_v);
-    let yawW, pitchW;
+    const cam = this.ctx.camera.position;
+    let yawW = this.heading, pitchW = -0.12 + P.pitchBias, mode = P.gaze;
+    if (mode === 'wander') {
+      if (t > (G.nextWander ?? 0)) {
+        const d = this.distToPlayer();
+        const facing = Math.abs(wrap(this.yawTo(cam.x, cam.z) - this.heading)) < 1.6;
+        if (d < 6 && facing && Math.random() < 0.3) { G.wPlayer = true; G.nextWander = t + rand(3, 6); }
+        else { G.wPlayer = false; G.wYaw = rand(-1.15, 1.15); G.wPitch = rand(-0.35, 0.12); G.nextWander = t + rand(3, 7); }
+        G.tRoll = Math.random() < 0.3 ? rand(0.25, 0.55) * (Math.random() < 0.5 ? -1 : 1) : 0;
+      }
+      mode = G.wPlayer ? 'player' : 'offset';
+    }
     if (P.scan) { yawW = this.heading + P.scan.yaw; pitchW = P.scan.pitch; }
-    else {
-      const tp = P.lookAt || this.ctx.camera.position;
+    else if (mode === 'offset') { yawW = this.heading + G.wYaw; pitchW = G.wPitch; }
+    else if (mode === 'player' || mode === 'point') {
+      const tp = mode === 'point' && P.lookAt ? P.lookAt : cam;
       yawW = Math.atan2(tp.x - headPos.x, tp.z - headPos.z);
       pitchW = Math.atan2(tp.y - headPos.y, Math.hypot(tp.x - headPos.x, tp.z - headPos.z));
     }
-    // unnatural holds, then a snap (or a slow, creeping turn)
-    if (t > G.next || P.scan || P.lookFreq) {
-      G.tYaw = G.yaw.x + wrap(yawW - G.yaw.x); G.tPitch = pitchW;
-      if (P.lookFreq || P.scan) G.freq = P.lookFreq || 2.5;
-      else {
-        const snap = Math.random() < 0.55 + P.near * 0.4;
-        G.freq = snap ? rand(5, 9) : rand(0.25, 0.6);
-        G.next = t + (snap ? rand(0.6, 2.8) : rand(2.5, 4.5)) * (1 - P.near * 0.8);
-        if (snap && Math.random() < 0.5) this.kick('head', 'z', rand(-0.18, 0.18));
-      }
-    }
+    this.eyesOnPlayer = mode === 'player';
+    // slow, deliberate turns of the head (actions may ask for a faster one)
+    G.tYaw = G.yaw.x + wrap(yawW - G.yaw.x); G.tPitch = pitchW;
+    G.freq = damp(G.freq, P.lookFreq ?? 0.55, 3, dt);
     const yaw = G.yaw.update(G.tYaw, G.freq, dt);
     const pitch = G.pitch.update(clamp(G.tPitch, -1.1, 1.0), G.freq, dt);
-    if (t > G.nextRoll) { G.tRoll = G.tRoll !== 0 && Math.random() < 0.6 ? 0 : rand(0.35, 0.75) * (Math.random() < 0.5 ? -1 : 1); G.nextRoll = t + rand(3, 9) * (1 - P.near * 0.5); }
-    const roll = G.roll.update(P.roll ?? (G.tRoll + P.near * 0.25 * Math.sign(G.tRoll || 1)), 0.8, dt);
+    const roll = G.roll.update(P.roll ?? (P.gaze === 'wander' ? G.tRoll : 0), 0.35, dt);
 
     // desired world orientation of the head
     const qd = _q.setFromEuler(_e.set(-pitch, yaw, 0, 'YXZ'));
@@ -354,14 +361,13 @@ export class Animator {
     for (const [n, frac] of [['neck', 0.22], ['neck2', 0.4], ['head', 1]]) {
       const bone = B[n];
       const qh = B.head.getWorldQuaternion(new THREE.Quaternion());
-      const delta = qd.clone().multiply(qh.invert()); // world rotation still needed at the head
+      const delta = qd.clone().multiply(qh.invert());
       const ang = 2 * Math.acos(clamp(Math.abs(delta.w), 0, 1));
       const lim = ang > 2.7 ? 2.7 / ang : 1;
       const step = new THREE.Quaternion().slerp(delta, w * frac * lim);
       const qb = bone.getWorldQuaternion(new THREE.Quaternion());
       setWorldQuat(bone, step.multiply(qb));
     }
-    // twitches on top
     const tw = _q2.setFromEuler(_e.set(this.twitchVal('head', 'x'), this.twitchVal('head', 'y'), this.twitchVal('head', 'z')));
     B.head.quaternion.multiply(tw);
     B.neck2.quaternion.multiply(_q2.setFromEuler(_e.set(0, this.twitchVal('neck2', 'y'), 0)));
@@ -403,7 +409,7 @@ class Idle {
     P.rot.spine = [0.03 * P.near, 0, 0]; P.rot.chest = [0.05 * P.near, 0, 0]; P.rot.upperChest = [0.08 * P.near, 0, 0];
     armsHang(P, reach, vnoise(a.t * 0.35, 5) * 0.03);
     P.open = smooth(0.2, 0.8, P.near);
-    P.rate = 2.5;
+    P.rate = 1.6; P.gaze = 'wander'; P.twitchiness = 0.08;
   }
 }
 
@@ -428,124 +434,186 @@ function crawlPose(a, P, ph) {
   P.rot.upperChest = [0.06, -0.05 * Math.sin(ph), 0];
   P.rot.neck = [-0.8, 0, 0]; P.rot.neck2 = [-0.5, 0, 0]; P.rot.head = [-0.3, 0, 0];
   P.rot.clavicleL = [0.1, 0, 0.22]; P.rot.clavicleR = [0.1, 0, -0.22];
-  P.open = 1.2; P.rate = 5;
+  P.open = 1.2; P.rate = 5; P.pitchBias = 0.1;
 }
 
 class Crawl extends Walk { constructor(a) { super(a, true); } }
 
 class Stalk {
+  // A hunter's approach: it moves in single deliberate steps and freezes between them,
+  // body slung low, hands raised and open, head locked on you and perfectly still.
+  constructor() { this.t = 0; this.phase = 'hold'; this.hold = 0.8; this.reached = false; }
   update(dt, a, P) {
+    this.t += dt;
     const p = a.ctx.camera.position;
-    const d = a.moveToward(p.x, p.z, 0.5, dt, 1.2, 2.2);
-    if (d <= 2.25) a.turnTo(a.yawTo(p.x, p.z), 1.2, dt);
-    P.gait = GAITS.stalk;
-    const ph = a.gait.phase * TAU;
-    P.hips = [0, -0.27 - 0.015 * Math.abs(Math.cos(ph)), 0];
-    P.rot.hips = [0.32, 0.05 * Math.sin(ph), 0.04 * Math.sin(ph)];
-    P.rot.spine = [0.18, 0, 0]; P.rot.chest = [0.12, 0, 0]; P.rot.upperChest = [0.12, 0, 0];
-    P.rot.neck = [-0.25, 0, 0];
-    for (const [L, s] of [['L', 1], ['R', -1]]) {
-      const f = a.footFwd[L === 'L' ? 'R' : 'L'];
-      P.rot['clavicle' + L] = [0, 0, s * 0.12];
-      P.rot['upperArm' + L] = [-0.55 - f * 0.4, 0, s * 0.18];
-      P.rot['forearm' + L] = [-0.7, 0, 0];
-      P.rot['hand' + L] = [0.35, 0, -s * 0.2];
+    const d = a.distToPlayer();
+    if (this.phase === 'hold') {
+      a.turnTo(a.yawTo(p.x, p.z), 0.5, dt);
+      if (this.t > this.hold && d > 2.3) { this.phase = 'step'; this.t = 0; }
+    } else {
+      const u = Math.min(this.t / 0.95, 1);
+      a.moveToward(p.x, p.z, 0.75 * Math.sin(Math.PI * u), dt, 0.8, 2.2);
+      if (u >= 1) { this.phase = 'hold'; this.t = 0; this.hold = rand(0.7, 1.6); }
     }
-    P.open = 1; P.rate = 4; P.lookFreq = 6; P.twitchiness = 2.5;
+    this.reached = d <= 2.35;
+    P.gait = GAITS.stalk;
+    const settle = this.phase === 'hold' ? smooth(0, 0.5, this.t) : 0;
+    P.hips = [0, -0.34 - 0.03 * settle, -0.02];
+    P.rot.hips = [0.42, 0, 0.02];
+    P.rot.spine = [0.22, 0, 0]; P.rot.chest = [0.14, 0, 0]; P.rot.upperChest = [0.1, 0, 0];
+    for (const [L, s] of [['L', 1], ['R', -1]]) {
+      const lift = this.reached ? 0.25 : 0;
+      P.rot['clavicle' + L] = [0, 0, s * (0.14 + lift * 0.3)];
+      P.rot['upperArm' + L] = [-0.62 - lift, 0, s * 0.2];
+      P.rot['forearm' + L] = [-0.8 + lift * 0.4, 0, 0];
+      P.rot['hand' + L] = [0.45, 0, -s * 0.2];
+    }
+    P.open = 1.1; P.rate = 2.2; P.armRate = 1.6;
+    P.gaze = 'player'; P.lookFreq = 0.45;
+    P.jaw = this.reached ? 0.35 : 0.12; P.breathe = 0.6;
   }
 }
 
 class Chase {
-  constructor() { this.t = 0; this.phase = 'run'; }
+  // Three beats: it turns and drops into a low stance (you see it decide), it runs at you
+  // with long, heavy, efficient strides (no flailing: arms tucked, head dead level), and
+  // when it reaches you it slowly rises to its full height over you before it strikes.
+  constructor() { this.t = 0; this.phase = 'turn'; }
   update(dt, a, P) {
     this.t += dt;
     const p = a.ctx.camera.position;
+    P.gaze = 'player';
+    if (this.phase === 'turn') {
+      const err = a.turnTo(a.yawTo(p.x, p.z), 1.6, dt);
+      P.hips = [0, -0.2 * smooth(0.2, 0.9, this.t), 0];
+      P.rot.hips = [0.3 * smooth(0.2, 0.9, this.t), 0, 0]; P.rot.spine = [0.15, 0, 0]; P.rot.chest = [0.1, 0, 0];
+      armsHang(P, 0.1);
+      P.rate = 3; P.lookFreq = 0.9; P.open = 0.6;
+      if (this.t > 1.1 && err < 0.15) { this.phase = 'run'; this.t = 0; }
+      return;
+    }
     if (this.phase === 'run') {
-      const d = a.moveToward(p.x, p.z, Math.min(3.8, 1 + this.t * 4), dt, 3.2, 1.25);
+      const d = a.moveToward(p.x, p.z, Math.min(3.4, 0.6 + this.t * 3.2), dt, 2.2, 1.5);
       P.gait = GAITS.run;
       const ph = a.gait.phase * TAU;
-      P.hips = [0, -0.14 - 0.05 * Math.abs(Math.cos(ph)), 0];
-      P.rot.hips = [0.3, 0.12 * Math.sin(ph), 0.05 * Math.sin(ph)];
-      P.rot.spine = [0.22, -0.1 * Math.sin(ph), 0]; P.rot.chest = [0.16, -0.1 * Math.sin(ph), 0]; P.rot.upperChest = [0.12, -0.08 * Math.sin(ph), 0];
-      P.rot.neck = [-0.35, 0, 0];
-      armsSwing(P, a, 2.2, -0.35, -0.7, 0.3);
-      P.rate = 10; P.armRate = 7; P.open = 1; P.jaw = 0.55; P.lookFreq = 12; P.tremble = 0.3;
-      if (d <= 1.3) { this.phase = 'lunge'; this.t = 0; a.shake += 0.6; }
-    } else {
-      a.turnTo(a.yawTo(p.x, p.z), 6, dt);
-      P.gait = GAITS.stand;
-      P.hips = [0, -0.12, 0.08];
-      P.rot.hips = [0.25, 0, 0]; P.rot.spine = [0.3, 0, 0]; P.rot.chest = [0.2, 0, 0]; P.rot.upperChest = [0.2, 0, 0];
+      P.hips = [0, -0.2 - 0.035 * Math.abs(Math.cos(ph)), 0];
+      P.rot.hips = [0.32, 0.05 * Math.sin(ph), 0.02 * Math.sin(ph)];
+      P.rot.spine = [0.2, -0.04 * Math.sin(ph), 0]; P.rot.chest = [0.12, -0.04 * Math.sin(ph), 0]; P.rot.upperChest = [0.08, 0, 0];
       for (const [L, s] of [['L', 1], ['R', -1]]) {
-        P.rot['clavicle' + L] = [0, 0, s * 0.25];
-        P.rot['upperArm' + L] = [-1.45, 0, s * 0.35];
-        P.rot['forearm' + L] = [-0.25, 0, 0];
-        P.rot['hand' + L] = [0.4, 0, 0];
+        const f = a.footFwd[L === 'L' ? 'R' : 'L'];
+        P.rot['clavicle' + L] = [0, 0, s * 0.05];
+        P.rot['upperArm' + L] = [0.15 - f * 0.45, 0, s * 0.1];
+        P.rot['forearm' + L] = [-1.05 - f * 0.2, 0, 0];
+        P.rot['hand' + L] = [0.25, 0, 0];
       }
-      P.open = 1.3; P.jaw = 1.0; P.rate = 14; P.lookFreq = 14; P.tremble = 0.5;
-      if (this.t > 0.7) return 'scream';
+      P.rate = 7; P.armRate = 5; P.open = 0.5; P.jaw = 0.25; P.lookFreq = 2.5;
+      if (d <= 1.55) { this.phase = 'loom'; this.t = 0; }
+      return;
     }
+    if (this.phase === 'loom') {
+      // it stops dead, then unfolds upward and leans its face down toward yours
+      a.turnTo(a.yawTo(p.x, p.z), 1.2, dt);
+      const u = smooth(0.2, 1.8, this.t);
+      P.hips = [0, -0.2 * (1 - u), 0.04 * u];
+      P.rot.hips = [0.32 * (1 - u) + 0.08 * u, 0, 0];
+      P.rot.spine = [0.2 * (1 - u) + 0.1 * u, 0, 0]; P.rot.chest = [0.1 * u, 0, 0]; P.rot.upperChest = [0.22 * u, 0, 0];
+      for (const [L, s] of [['L', 1], ['R', -1]]) {
+        P.rot['clavicle' + L] = [0, 0, s * 0.12 * u];
+        P.rot['upperArm' + L] = [-0.35 * u, 0, s * 0.28 * u];
+        P.rot['forearm' + L] = [-0.6 * u, 0, 0];
+        P.rot['hand' + L] = [0.35 * u, 0, -s * 0.2 * u];
+      }
+      P.rate = 2.4; P.open = 1.2 * u; P.jaw = 0.15 + 0.75 * smooth(1.2, 2.6, this.t); P.lookFreq = 0.6; P.breathe = 1.5;
+      if (this.t > 3.0) { this.phase = 'strike'; this.t = 0; a.shake += 0.4; }
+      return;
+    }
+    // strike: one arm comes down at you, then it holds there
+    a.turnTo(a.yawTo(p.x, p.z), 2, dt);
+    const u = smooth(0, 0.18, this.t);
+    P.rot.hips = [0.15, 0, 0]; P.rot.spine = [0.25 * u, 0, 0]; P.rot.chest = [0.15, 0, 0]; P.rot.upperChest = [0.25, 0, 0];
+    P.rot.clavicleL = [0, 0, 0.3]; P.rot.upperArmL = [-2.4 + 1.5 * u, 0, 0.35]; P.rot.forearmL = [-0.5 + 0.3 * u, 0, 0]; P.rot.handL = [0.4, 0, 0];
+    P.rot.clavicleR = [0, 0, -0.12]; P.rot.upperArmR = [-0.4, 0, -0.3]; P.rot.forearmR = [-0.7, 0, 0];
+    P.rate = this.t < 0.18 ? 16 : 2; P.open = 1.4; P.jaw = 0.95; P.lookFreq = 1.5;
+    if (this.t > 0.15 && this.t - dt <= 0.15) a.shake += 0.9;
+    if (this.t > 2.2) return 'idle';
   }
 }
 
 class Leap {
-  constructor() { this.t = 0; this.phase = 'crouch'; }
+  // Readable from across the room: it squares up to you, sinks into a deep coil and holds
+  // perfectly still, then explodes into a flat ballistic pounce, lands heavily on all four
+  // limbs, and takes its time rising, eyes on you the whole way.
+  constructor() { this.t = 0; this.phase = 'turn'; }
   aim(a) {
     const p = a.ctx.camera.position, r = a.root.position;
     const d = Math.hypot(p.x - r.x, p.z - r.z);
-    const yaw = d > 0.5 ? a.yawTo(p.x, p.z) : a.heading;
-    const L = clamp(d - 1.4, 1.2, 4.2);
-    this.yaw = yaw;
-    this.from = r.clone();
+    this.yaw = d > 0.5 ? a.yawTo(p.x, p.z) : a.heading;
+    const L = clamp(d - 1.3, 1.2, 4.6);
     const { min, max } = a.world.bounds;
-    this.to = new THREE.Vector3(clamp(r.x + Math.sin(yaw) * L, min.x + 0.6, max.x - 0.6), 0, clamp(r.z + Math.cos(yaw) * L, min.z + 0.6, max.z - 0.6));
+    this.from = r.clone();
+    this.to = new THREE.Vector3(clamp(r.x + Math.sin(this.yaw) * L, min.x + 0.6, max.x - 0.6), 0, clamp(r.z + Math.cos(this.yaw) * L, min.z + 0.6, max.z - 0.6));
+    this.dist = this.from.distanceTo(this.to);
+    this.T = 0.5 + this.dist * 0.045;          // flight time
+    this.apex = 9.8 * this.T * this.T / 8;     // height of a true ballistic arc for that time
   }
   update(dt, a, P) {
     if (!this.to) this.aim(a);
     this.t += dt;
-    const crouch = (P2, amt) => {
-      P2.hips = [0, -0.42 * amt, -0.05 * amt];
-      P2.rot.hips = [0.45 * amt, 0, 0]; P2.rot.spine = [0.25 * amt, 0, 0]; P2.rot.chest = [0.15 * amt, 0, 0]; P2.rot.upperChest = [0.1 * amt, 0, 0];
-      P2.rot.neck = [-0.45 * amt, 0, 0];
-    };
-    if (this.phase === 'crouch') {
-      a.turnTo(this.yaw, 5, dt);
-      crouch(P, 1);
+    P.gaze = 'player';
+    const coil = (P2, amt) => {
+      P2.hips = [0, -0.5 * amt, -0.08 * amt];
+      P2.rot.hips = [0.62 * amt, 0, 0]; P2.rot.spine = [0.28 * amt, 0, 0]; P2.rot.chest = [0.14 * amt, 0, 0]; P2.rot.upperChest = [0.08 * amt, 0, 0];
       for (const [L, s] of [['L', 1], ['R', -1]]) {
-        P.rot['upperArm' + L] = [0.75, 0, s * 0.3]; P.rot['forearm' + L] = [-0.6, 0, 0]; P.rot['hand' + L] = [0.4, 0, 0];
-        P.rot['clavicle' + L] = [0, 0, s * 0.1];
+        P2.rot['clavicle' + L] = [0, 0, s * 0.08 * amt];
+        P2.rot['upperArm' + L] = [0.55 * amt, 0, s * 0.22 * amt];
+        P2.rot['forearm' + L] = [-0.35 * amt, 0, 0];
+        P2.rot['hand' + L] = [0.5 * amt, 0, 0];
       }
-      P.rate = 6; P.open = 1; P.tremble = 0.25 + this.t * 0.4; P.lookFreq = 10;
-      if (this.t > 0.7) { this.phase = 'fly'; this.t = 0; this.dur = 0.36 + this.from.distanceTo(this.to) * 0.08; }
+    };
+    if (this.phase === 'turn') {
+      const err = a.turnTo(this.yaw, 1.4, dt);
+      armsHang(P, 0); P.rate = 3; P.lookFreq = 0.8;
+      if (err < 0.06 && this.t > 0.5) { this.phase = 'coil'; this.t = 0; }
+    } else if (this.phase === 'coil') {
+      coil(P, smooth(0, 1.1, this.t));
+      P.rate = 2.6; P.open = 1; P.lookFreq = 1.2; P.breathe = 1.6;
+      if (this.t > 1.1) { this.phase = 'hold'; this.t = 0; }
+    } else if (this.phase === 'hold') {
+      coil(P, 1.05); P.rate = 3; P.open = 1.1; P.breathe = 0.2; P.lookFreq = 2; // it stops breathing
+      if (this.t > 0.7) { this.phase = 'fly'; this.t = 0; }
     } else if (this.phase === 'fly') {
-      const u = Math.min(this.t / this.dur, 1);
+      const u = Math.min(this.t / this.T, 1);
       a.root.position.lerpVectors(this.from, this.to, u);
-      const lift = 4 * u * (1 - u) * (0.45 + this.from.distanceTo(this.to) * 0.04);
+      const lift = 4 * this.apex * u * (1 - u);
       // a flat, diving pounce: body level, claws reaching for you, legs streaming behind
       P.hips = [0, -0.25 + lift, 0];
       P.rot.hips = [1.05, 0, 0]; P.rot.spine = [0.25, 0, 0]; P.rot.chest = [0.1, 0, 0]; P.rot.upperChest = [0.05, 0, 0];
       P.rot.neck = [-0.95, 0, 0]; P.rot.neck2 = [-0.4, 0, 0];
       for (const [L, s] of [['L', 1], ['R', -1]]) {
         P.rot['clavicle' + L] = [0, 0, s * 0.3];
-        P.rot['upperArm' + L] = [-0.6, 0, s * 0.55]; P.rot['forearm' + L] = [-0.35, 0, 0]; P.rot['hand' + L] = [0.6, 0, -s * 0.2];
+        P.rot['upperArm' + L] = [-0.6 - 0.5 * u, 0, s * 0.45]; P.rot['forearm' + L] = [-0.25, 0, 0]; P.rot['hand' + L] = [0.6, 0, -s * 0.2];
       }
-      // legs trail behind the body
       a.root.updateMatrixWorld(true);
       const hp = a.B.hips.getWorldPosition(new THREE.Vector3());
       const fwd = new THREE.Vector3(Math.sin(a.heading), 0, Math.cos(a.heading)), side = new THREE.Vector3(Math.cos(a.heading), 0, -Math.sin(a.heading));
       P.feet = {
-        L: hp.clone().addScaledVector(side, 0.16).addScaledVector(fwd, -1.0 + 0.25 * u).add(new THREE.Vector3(0, -0.35 - 0.25 * u, 0)),
-        R: hp.clone().addScaledVector(side, -0.16).addScaledVector(fwd, -0.85 + 0.35 * u).add(new THREE.Vector3(0, -0.45 - 0.25 * u, 0)),
+        L: hp.clone().addScaledVector(side, 0.16).addScaledVector(fwd, -1.0 + 0.45 * u).add(new THREE.Vector3(0, -0.35 - 0.45 * u, 0)),
+        R: hp.clone().addScaledVector(side, -0.16).addScaledVector(fwd, -0.85 + 0.45 * u).add(new THREE.Vector3(0, -0.45 - 0.4 * u, 0)),
       };
-      P.footPitch = 1.4; P.rate = 12; P.open = 1.4; P.jaw = 0.95; P.lookFreq = 14; P.tremble = 0.2;
-      if (u >= 1) { this.phase = 'land'; this.t = 0; a.gait.reset(GAITS.stand); a.shake += 1.2; a.hipsCur.y = -0.5; }
+      P.footPitch = 1.4 - u; P.rate = this.t < 0.08 ? 22 : 9; P.open = 1.4; P.jaw = 0.85; P.lookFreq = 3;
+      if (u >= 1) { this.phase = 'land'; this.t = 0; a.gait.reset(GAITS.stand); a.shake += 1.2; a.hipsCur.y = -0.6; }
     } else if (this.phase === 'land') {
-      crouch(P, this.t < 0.35 ? 1.1 : 0.5);
+      // absorbs the impact deep, palms down on the floor in front of it
+      coil(P, 1.15);
       for (const [L, s] of [['L', 1], ['R', -1]]) {
-        P.rot['upperArm' + L] = [-0.9, 0, s * 0.45]; P.rot['forearm' + L] = [-0.5, 0, 0]; P.rot['clavicle' + L] = [0, 0, s * 0.2];
+        P.rot['upperArm' + L] = [-0.75, 0, s * 0.35]; P.rot['forearm' + L] = [-0.35, 0, 0]; P.rot['hand' + L] = [0.9, 0, 0];
       }
-      P.rate = this.t < 0.35 ? 14 : 3; P.open = 1.2; P.jaw = 0.6; P.lookFreq = 10;
-      if (this.t > 1.4) return 'idle';
+      P.rate = this.t < 0.12 ? 18 : 3; P.open = 1.3; P.jaw = 0.5; P.lookFreq = 1;
+      if (this.t > 0.9) { this.phase = 'rise'; this.t = 0; }
+    } else {
+      coil(P, 1 - smooth(0, 1.6, this.t));
+      P.rate = 1.8; P.open = 0.8; P.lookFreq = 0.6; P.breathe = 1.4;
+      if (this.t > 2.2) return 'idle';
     }
   }
 }
@@ -568,7 +636,7 @@ class LookAround {
     P.rot.hips = [0.05, 0, 0.035];
     P.rot.upperChest = [0.1, yaw * 0.18, 0]; P.rot.chest = [0.05, yaw * 0.1, 0];
     armsHang(P, 0.15, vnoise(a.t * 0.5, 5) * 0.04);
-    P.open = 0.5; P.rate = 3; P.twitchiness = 2;
+    P.open = 0.5; P.rate = 2.5; P.twitchiness = 0;
   }
 }
 
@@ -592,7 +660,7 @@ class Scream {
       P.rot['forearm' + L] = [-0.95 * build, 0, 0];
       P.rot['hand' + L] = [0.6 * build, 0, -s * 0.3 * build];
     }
-    if (up) { P.scan = { yaw: 0, pitch: 0.8 }; P.lookFreq = 2; } else P.lookFreq = 10;
+    if (up) { P.scan = { yaw: 0, pitch: 0.8 }; P.lookFreq = 1.2; } else { P.gaze = 'player'; P.lookFreq = 1.6; }
     P.roll = 0; P.open = 1.5; P.jaw = 1.0 * build; P.tremble = 1.2 * build; P.rate = 6;
     if (this.t > 0.8) a.shake = Math.max(a.shake, 0.8 * (1 - smooth(2.6, 3.4, this.t)) * (1 - smooth(2, 7, a.distToPlayer())) + 0.15);
     if (this.t > 3.4) return 'idle';
@@ -617,7 +685,7 @@ class Convulse {
     }
     Object.assign(P.rot, this.k);
     P.hips = [0, -0.12 + Math.sin(this.t * 17) * 0.03, 0];
-    P.look = 0.35; P.open = Math.random() < 0.5 ? 1.5 : -0.6; P.jaw = rand(0.2, 1.0); P.rate = 22; P.tremble = 0.8; P.twitchiness = 6;
+    P.look = 0.35; P.open = Math.random() < 0.5 ? 1.5 : -0.6; P.jaw = rand(0.2, 1.0); P.rate = 22; P.tremble = 0.8; P.twitchiness = 6; P.lookFreq = 6;
     if (this.t > 3.8) return 'idle';
   }
 }
@@ -638,7 +706,7 @@ class BreakDoor {
       if (d < 0.12) { this.phase = 'face'; this.t = 0; }
       return;
     }
-    P.lookAt = door.position.clone().setY(1.6);
+    P.lookAt = door.position.clone().setY(1.6); P.gaze = 'point';
     if (this.phase === 'face') {
       const err = a.turnTo(this.face, 2.2, dt);
       P.rot.hips = [0.05, 0, 0]; armsHang(P, 0.2); P.rate = 4;
