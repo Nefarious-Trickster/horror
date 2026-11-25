@@ -241,10 +241,47 @@ function clawGeometry(c, origin) {
   return g;
 }
 
+// ------------------------------------------------------------------ embedded glTF -> GLB (in memory)
+async function fetchEmbeddedGltfAsGlb(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`model request failed (${res.status})`);
+  const total = +res.headers.get('content-length') || 0;
+  let text;
+  if (res.body && total) {
+    const reader = res.body.getReader(); const parts = []; let got = 0;
+    for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; onProgress?.(0.9 * got / total); }
+    text = new TextDecoder().decode(await new Blob(parts).arrayBuffer());
+  } else text = await res.text();
+  const json = JSON.parse(text);
+  const uri = json.buffers[0].uri;
+  const b64 = uri.slice(uri.indexOf(',') + 1);
+  const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  delete json.buffers[0].uri;
+  let jsonBytes = new TextEncoder().encode(JSON.stringify(json));
+  const jsonLen = Math.ceil(jsonBytes.length / 4) * 4, binLen = Math.ceil(bin.length / 4) * 4;
+  const out = new Uint8Array(12 + 8 + jsonLen + 8 + binLen);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
+  dv.setUint32(12, jsonLen, true); dv.setUint32(16, 0x4e4f534a, true);
+  out.fill(0x20, 20, 20 + jsonLen); out.set(jsonBytes, 20);
+  const b = 20 + jsonLen;
+  dv.setUint32(b, binLen, true); dv.setUint32(b + 4, 0x004e4942, true);
+  out.set(bin, b + 8);
+  onProgress?.(1);
+  return out.buffer;
+}
+
 // ------------------------------------------------------------------ creature
 export class Creature {
   static async load(url, onProgress) {
-    const gltf = await new GLTFLoader().loadAsync(url, (e) => onProgress?.(e.total ? e.loaded / e.total : 0));
+    const loader = new GLTFLoader();
+    // JSON .gltf with an embedded base64 buffer: decode it here and hand the loader a GLB in memory.
+    // Some hosts (strict content-security policies) refuse the loader's own fetch of data: URIs.
+    if (/\.json$|\.gltf$/i.test(new URL(url, location.href).pathname)) {
+      const glb = await fetchEmbeddedGltfAsGlb(url, onProgress);
+      return new Creature(await loader.parseAsync(glb, ''));
+    }
+    const gltf = await loader.loadAsync(url, (e) => onProgress?.(e.total ? e.loaded / e.total : 0));
     return new Creature(gltf);
   }
 
