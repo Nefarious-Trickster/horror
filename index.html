@@ -13,10 +13,11 @@
     }
   </script>
   <style>
-    :root { --fg: #cfc7b8; --dim: #6f685d; --bg: #020203; --accent: #8a1c14; }
+    /* one dark visual world: a pitch-black room, so the page commits to a single dark look */
+    :root { --fg: #cfc7b8; --dim: #6f685d; --bg: #020203; --accent: #8a1c14; --line: #2a2622; --line-hi: #4a4239; color-scheme: dark; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; font-family: "Courier New", ui-monospace, monospace; -webkit-user-select: none; user-select: none; }
-    canvas { display: block; touch-action: none; }
+    canvas { display: block; touch-action: none; position: fixed; inset: 0; }
     #intro { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, #0a0908 0%, #000 70%); transition: opacity 1.2s; z-index: 5; padding: 16px; }
     #intro.gone { opacity: 0; pointer-events: none; }
     .card { max-width: 520px; text-align: center; }
@@ -25,19 +26,20 @@
     #loading { width: 220px; height: 2px; background: #1a1714; margin: 0 auto 1.6em; transition: opacity 0.6s; }
     #loading.done { opacity: 0; }
     #bar { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
-    #enter { font: inherit; color: var(--dim); background: none; border: 1px solid #2a2622; padding: 12px 28px; letter-spacing: 0.3em; cursor: default; opacity: 0.4; transition: all 0.4s; }
-    #enter.ready { opacity: 1; color: var(--fg); cursor: pointer; border-color: #4a4239; }
-    #enter.ready:hover { border-color: var(--accent); color: #fff; }
+    #enter { font: inherit; color: var(--dim); background: none; border: 1px solid var(--line); padding: 12px 28px; letter-spacing: 0.3em; cursor: default; opacity: 0.4; transition: all 0.4s; }
+    #enter.ready { opacity: 1; color: var(--fg); cursor: pointer; border-color: var(--line-hi); }
+    #enter:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+    #enter.ready:hover { border-color: var(--accent); color: var(--fg); }
     .keys { margin-top: 2.2em; font-size: 12px; color: var(--dim); line-height: 1.9; }
     .keys b { color: var(--fg); font-weight: normal; }
     #status { color: #c55; font-size: 12px; margin-top: 1em; min-height: 1em; }
-    #hud { position: fixed; left: 16px; bottom: 14px; font-size: 11px; color: rgba(207, 199, 184, 0.55); letter-spacing: 0.08em; line-height: 1.7; transition: opacity 2s; z-index: 3; pointer-events: none; }
+    #hud { position: fixed; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); font-size: 11px; color: rgba(207, 199, 184, 0.55); letter-spacing: 0.08em; line-height: 1.7; transition: opacity 2s; z-index: 3; pointer-events: none; }
     #hud.faded { opacity: 0.15; }
     #hud.hidden { opacity: 0; }
     .touch-only { display: none; }
     body.touch .touch-only { display: block; }
     body.touch .desk-only { display: none; }
-    #btns { position: fixed; right: 16px; bottom: 16px; display: none; gap: 10px; z-index: 4; }
+    #btns { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: none; gap: 10px; z-index: 4; }
     body.touch #btns { display: flex; }
     #btns button { font: inherit; font-size: 12px; color: var(--fg); background: rgba(10, 9, 8, 0.6); border: 1px solid #3a342e; padding: 12px 14px; letter-spacing: 0.15em; }
     #stick { position: fixed; width: 110px; height: 110px; margin: -55px 0 0 -55px; border: 1px solid rgba(207, 199, 184, 0.2); border-radius: 50%; display: none; z-index: 4; pointer-events: none; }

@@ -169,7 +169,10 @@ addEventListener('resize', () => {
 // ------------------------------------------------------------------ load creature
 let creature = null;
 const bar = $('bar');
-Creature.load(new URL('../assets/creature.glb', import.meta.url).href, (p) => { bar.style.width = (p * 100).toFixed(0) + '%'; })
+// a page may point at another copy of the model (e.g. the JSON .gltf form) with <meta name="creature-model">
+const modelMeta = document.querySelector('meta[name="creature-model"]')?.content;
+const modelUrl = modelMeta ? new URL(modelMeta, document.baseURI).href : new URL('../assets/creature.glb', import.meta.url).href;
+Creature.load(modelUrl, (p) => { bar.style.width = (p * 100).toFixed(0) + '%'; })
   .then((c) => {
     creature = c;
     c.object.position.set(CREATURE_SPOT.x, 0, CREATURE_SPOT.z);
