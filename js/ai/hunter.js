@@ -19,12 +19,14 @@ export class Hunter {
     this.noiseQ = null; this.moveSoundT = 0; this.breathT = 0;
     this.playerHidden = false; this.sawHide = false;
     this.aggression = o.aggression ?? 1;
+    this.flashRange = o.flashRange ?? 7; this.enraged = 0;
+    this.hunt = o.hunt ?? 0.35; // how strongly its wandering drifts toward where you are (it hears more than you think)
   }
   get pos() { return this.c.object.position; }
   set(state, data = {}) { this.state = state; this.stateT = 0; this.data = data; this.onState?.(state); }
   follow(path, mode, extra = {}) { this.anim.play('follow', { path, mode, ...extra }); }
   pathTo(x, z, opts) {
-    return this.grid.findPath(this.pos, { x, z }, { cost: (cx, cz) => (this.isLit?.(cx, cz) ? 40 : 0), ...opts });
+    return this.grid.findPath(this.pos, { x, z }, { cost: (cx, cz) => (this.isLit?.(cx, cz) && this.enraged <= 0 ? 40 : 0), ...opts });
   }
 
   // ---------------------------------------------------------------- senses
@@ -50,16 +52,35 @@ export class Hunter {
     if (['chase', 'stunned', 'retreat', 'attack'].includes(this.state)) return;
     this.noiseQ = { x: pos.x, z: pos.z, loud: radius };
   }
-  // the halide lamp hit it
+  // The halide lamp hit it. It is not a "go away" button:
+  //  - from too far it only squints, and now it knows exactly where you are;
+  //  - the first flash in a while staggers it and it backs off into the dark, but not for long;
+  //  - the second comes as less of a surprise: a short flinch, then it circles back at once;
+  //  - by the third it has learned: it shields its eyes and comes straight through the light.
   flashHit(dist) {
     if (!this.enabled || this.state === 'scripted' || this.state === 'attack') return false;
-    if (dist > 10) return false;
-    const now = this.t;
-    this.stuns = this.stuns.filter((t) => now - t < 25); this.stuns.push(now);
     const cam = this.game.camera.position;
-    sfx.creatureScream(this.headPos(), { dur: 1.3 });
-    this.anim.play('recoil', { from: cam.clone(), dur: 1.0 });
-    this.set('stunned', { far: this.stuns.length >= 2 });
+    this.lastSeen = V(cam.x, cam.z);
+    if (dist > this.flashRange) {
+      sfx.creatureGrowl?.(this.headPos(), 0.8);
+      this.suspicion = 1.2;
+      if (!['chase', 'stalk', 'shielding'].includes(this.state)) this.stalk();
+      return false;
+    }
+    const now = this.t;
+    this.stuns = this.stuns.filter((t) => now - t < 50);
+    const n = this.stuns.length;
+    this.stuns.push(now);
+    if (n >= 2) {
+      sfx.creatureGrowl?.(this.headPos(), 1.2);
+      this.anim.play('shield', { from: cam.clone(), dur: 0.9 });
+      this.set('shielding');
+      this.enraged = 9;
+      return false;
+    }
+    sfx.creatureScream(this.headPos(), { dur: n ? 0.8 : 1.3 });
+    this.anim.play('recoil', { from: cam.clone(), dur: n ? 0.55 : 1.0 });
+    this.set('stunned', { dur: n ? 0.6 : 1.2, second: n === 1 });
     return true;
   }
   headPos() { return this.c.bone.head.getWorldPosition(new THREE.Vector3()); }
@@ -67,6 +88,7 @@ export class Hunter {
   // ---------------------------------------------------------------- brain
   update(dt) {
     this.t += dt; this.stateT += dt;
+    this.enraged = Math.max(0, this.enraged - dt);
     if (!this.enabled || this.state === 'scripted') return;
     const g = this.game, cam = g.camera.position;
     const vis = this.playerVisibility();
@@ -107,26 +129,36 @@ export class Hunter {
       case 'chase': {
         this.replanT -= dt;
         if (vis <= 0 && this.lostT > 3.5 && !this.sawHide) { this.investigateAt(this.lastSeen, 'walk'); break; }
-        if (this.isLit?.(cam.x, cam.z)) { this.lurk(); break; }
+        if (this.isLit?.(cam.x, cam.z) && this.enraged <= 0) { this.lurk(); break; }
         if (dPlayer < 1.45 && !this.playerHidden) { this.attack(); break; }
         if (this.playerHidden && this.sawHide && dPlayer < 1.6) { this.attack(); break; }
         if (this.replanT <= 0) {
           this.replanT = 0.45;
-          const tgt = this.sawHide || vis > 0 ? cam : this.lastSeen;
+          const tgt = (this.sawHide || vis > 0 ? cam : this.lastSeen) || cam;
           const p = this.pathTo(tgt.x, tgt.z);
-          if (p) this.follow(p, 'run', { gaze: 'player', lookFreq: 3 });
+          if (p) this.follow(p, 'run', { gaze: 'player', lookFreq: 3, speed: this.enraged > 0 ? 4.1 : 3.4 });
         }
         break;
       }
       case 'lurk': // at the edge of the light: it waits, and watches you
         if (!this.isLit?.(cam.x, cam.z) && this.stateT > 1.5) { this.chase(); break; }
-        if (this.stateT > this.data.until) { this.retreatFrom(cam, 10); }
+        if (this.stateT > this.data.until) { this.investigateAt(this.lastSeen || V(cam.x, cam.z)); }
         break;
       case 'stunned':
-        if (this.stateT > 1.0) this.retreatFrom(cam, this.data.far ? 16 : 8);
+        if (this.stateT > (this.data.dur ?? 1)) {
+          if (this.data.second) { this.suspicion = 1.0; this.stalk(); } // it does not go far the second time
+          else this.retreatFrom(cam, rand(6, 9));
+        }
+        break;
+      case 'shielding': // eyes covered, it pushes through the light
+        if (this.stateT > 0.85) this.chase();
         break;
       case 'retreat':
-        if (this.data.arrived || this.stateT > 9) { this.anim.play('lookAround'); this.set('search', { until: rand(3, 6) }); this.suspicion = 0.4; }
+        // it backs into the dark, waits, and comes back the way it went
+        if (this.data.arrived || this.stateT > 7) {
+          if (!this.data.holdT) { this.data.holdT = this.stateT; this.anim.play('idle', { stare: true }); }
+          if (this.stateT - this.data.holdT > rand(1.5, 3.5)) { this.suspicion = 0.8; this.stalk(); }
+        }
         break;
       case 'attack': break;
       default: break;
@@ -150,11 +182,18 @@ export class Hunter {
   nextPatrol() {
     const pts = this.patrol;
     let tries = 0, p;
-    do { this.patrolI = (this.patrolI + 1 + (Math.random() < 0.3 ? 1 : 0)) % pts.length; p = pts[this.patrolI]; } while (this.isLit?.(p.x, p.z) && tries++ < pts.length);
+    const cam = this.game.camera.position;
+    if (Math.random() < this.hunt) {
+      // it drifts toward where it last heard you, or simply toward you: the nearest patrol points to the player
+      const ref = this.lastSeen && Math.random() < 0.5 ? this.lastSeen : cam;
+      const near = pts.map((q, i) => [Math.hypot(q.x - ref.x, q.z - ref.z) + Math.random() * 6, i]).filter(([, i]) => !this.isLit?.(pts[i].x, pts[i].z)).sort((a, b) => a[0] - b[0]);
+      if (near.length) { this.patrolI = near[0][1]; p = pts[this.patrolI]; }
+    }
+    if (!p) do { this.patrolI = (this.patrolI + 1 + (Math.random() < 0.3 ? 1 : 0)) % pts.length; p = pts[this.patrolI]; } while (this.isLit?.(p.x, p.z) && tries++ < pts.length);
     const path = this.pathTo(p.x, p.z);
     if (!path) { this.set('patrol', { arrived: true, wait: 1 }); return; }
     const mode = p.mode || (Math.random() < 0.25 ? 'crawl' : 'walk');
-    const st = { arrived: false, wait: p.wait ?? rand(1.5, 4) };
+    const st = { arrived: false, wait: p.wait ?? rand(1, 2.6) };
     this.set('patrol', st);
     this.follow(path, mode, { gaze: 'forward', onArrive: () => { st.arrived = true; if (p.look) this.anim.play('lookAround'); } });
   }

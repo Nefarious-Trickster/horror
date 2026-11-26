@@ -18,7 +18,7 @@ export class Water {
     this.next = 0; this.time = 0;
     const uniforms = { uTime: { value: 0 }, uRip: { value: this.ripples } };
     this.uniforms = uniforms;
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.06, metalness: 0.0, transparent: true, opacity, depthWrite: false, envMapIntensity: 0.6 });
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.2, metalness: 0.0, transparent: true, opacity, depthWrite: false, envMapIntensity: 0.6 });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = uniforms.uTime; sh.uniforms.uRip = uniforms.uRip;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
@@ -50,7 +50,8 @@ export class Water {
           diffuseColor.a = clamp(diffuseColor.a + fres * 0.08, 0.0, 1.0);
           #include <opaque_fragment>`);
     };
-    mat.customProgramCacheKey = () => 'water-v1';
+    mat.defines = { GLOSSY: '' }; // exempt from the global roughness floor
+    mat.customProgramCacheKey = () => 'water-v2';
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.renderOrder = 3; this.mesh.receiveShadow = true;
     this.mesh.userData.dynamic = true;

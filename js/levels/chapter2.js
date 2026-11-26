@@ -29,7 +29,7 @@ const ROOMS = {
   ncorr: { x0: -1.6, x1: 1.6, z0: 20, z1: 30, h: 3.0 },
   north: { x0: -8, x1: 8, z0: 30, z1: 40, h: 4.0 },
   control: { x0: 5, x1: 13, z0: -5, z1: 0, h: 3.0, dry: true },
-  stair: { x0: -11, x1: -5, z0: -4.5, z1: -0.5, h: 3.4, dry: true },
+  stair: { x0: -11, x1: -5, z0: -4.5, z1: -0.5, h: 6.2, dry: true },
 };
 const DOORS = [
   { x0: -1.3, x1: 1.3, z0: -5.3, z1: -4.7, wide: true }, // lift car
@@ -43,6 +43,15 @@ const DOORS = [
   { x0: 4.7, x1: 5.3, z0: -3.4, z1: -1.6 }, // lobby / control room
   { x0: -5.3, x1: -4.7, z0: -3.1, z1: -1.9, pressure: true }, // lobby / stair (pressure door)
 ];
+// the stair flight up to the archive, climbing west along the stair room's south side
+const STAIR = { x0: -6.0, zc: -3.6, z0: -4.35, z1: -2.85, rise: 0.18 / 0.28, top: 14 * 0.18 };
+const stairGround = (x, z) => {
+  if (z < STAIR.z0 - 0.15 || z > STAIR.z1 + 0.02 || x > STAIR.x0 + 0.05) {
+    if (x < STAIR.x0 - 14 * 0.28 && z < -0.8 && x > -11.1) return STAIR.top; // landing
+    return 0;
+  }
+  return Math.min(STAIR.top, Math.max(0, (STAIR.x0 + 0.05 - x) * STAIR.rise));
+};
 const PUMPS = [
   { id: 'P1', room: 'east', at: V(23.5, 0, 7.5), rot: 0, panel: V(22, 1.35, 2.0), prot: R.N, speed: 0.12, wobble: 0.0, green: [0.6, 0.78], color: 'greenPaint', light: [V(26, 3.2, 3.5), V(23.5, 0, 7.5)] },
   { id: 'P2', room: 'west', at: V(-22.5, 0, 12), rot: Math.PI, panel: V(-28, 1.35, 9.5), prot: R.E, speed: 0.16, wobble: 0.03, green: [0.64, 0.78], color: 'steelPaint', light: [V(-19.5, 3.2, 15), V(-23, 0, 11)] },
@@ -83,7 +92,7 @@ const DOCS = {
 export async function chapter2(game, opts = {}) {
   const { scene, player, ui, director: d, interact, renderer } = game;
   const say = (who, text, dur) => ui.say(who, text, dur);
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.05;
   scene.background = new THREE.Color(0x020304);
   scene.fog = new THREE.FogExp2(0x040606, 0.045);
 
@@ -266,9 +275,16 @@ export async function chapter2(game, opts = {}) {
   // a flight of stairs going up out of the stair room (seen through the door)
   {
     const S = ROOMS.stair, g = [];
-    for (let k = 0; k < 14; k++) { const b = new THREE.BoxGeometry(0.28, 0.18 * (k + 1), 1.4); b.translate(S.x1 - 1.2 - k * 0.28, 0.09 * (k + 1), S.z0 + 0.9); K.worldUV?.(b, 1); g.push(b); }
+    for (let k = 0; k < 14; k++) { const b = new THREE.BoxGeometry(0.28, 0.18 * (k + 1), 1.5); b.translate(STAIR.x0 - 0.14 - k * 0.28, 0.09 * (k + 1), STAIR.zc); K.worldUV?.(b, 1); g.push(b); }
+    const land = new THREE.BoxGeometry(STAIR.x0 - 14 * 0.28 - S.x0, STAIR.top, S.z1 - S.z0 - 0.6); land.translate((S.x0 + STAIR.x0 - 14 * 0.28) / 2, STAIR.top / 2, (S.z0 + S.z1 - 0.6) / 2); K.worldUV?.(land, 1); g.push(land);
     const st = new THREE.Mesh(mergeGeometries(g), M.concrete || fbMat); st.castShadow = st.receiveShadow = true; scene.add(st);
-    const lit = new THREE.PointLight(0x9fc4ff, 2.5, 7, 2); lit.position.set(-8, 2.6, -2.5); scene.add(lit);
+    // handrail on the open side of the flight
+    const railM = M.yellowPaint || fbMat;
+    for (let k = 0; k <= 14; k += 2) { const x = STAIR.x0 - 0.14 - k * 0.28, y0 = 0.18 * (k + 1); const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.95, 8), railM); post.position.set(x, y0 + 0.47, STAIR.z1 + 0.04); scene.add(post); }
+    const rl = Math.hypot(14 * 0.28, 14 * 0.18), rail = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, rl, 8), railM);
+    rail.position.set(STAIR.x0 - 7 * 0.28, 7 * 0.18 + 1.0, STAIR.z1 + 0.04); rail.rotation.z = Math.PI / 2 - Math.atan2(0.18, 0.28); scene.add(rail);
+    colliders.push({ minX: S.x0, maxX: STAIR.x0 - 1.3, minZ: STAIR.z1, maxZ: STAIR.z1 + 0.1 });
+    const lit = new THREE.PointLight(0x9fc4ff, 1.4, 7, 2); lit.position.set(-8, 2.6, -2.5); scene.add(lit);
   }
 
   // ---------------------------------------------------------------- control room (dry, lit: it will not come in here)
@@ -279,8 +295,8 @@ export async function chapter2(game, opts = {}) {
   place(model('steel_frame_shelves_01', [1.1, 2.1, 0.5]), 12.6, -2.5, R.W);
   place(model('metal_office_desk', [2, 0.8, 0.95]), 6.4, -1.0, R.E);
   const logBook = place(model('binder_notebook', [0.5, 0.05, 0.3]), 6.4, -1.2, 0.3, 0.79);
-  const crLight = new THREE.PointLight(0xd8e6ff, 9, 9, 1.6); crLight.position.set(9, 2.7, -2.5); scene.add(crLight);
-  const tube = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 0.12), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xdde8ff, emissiveIntensity: 3 })); tube.position.set(9, 2.95, -2.5); scene.add(tube);
+  const crLight = new THREE.PointLight(0xd8e6ff, 3.5, 9, 1.6); crLight.position.set(9, 2.7, -2.5); scene.add(crLight);
+  const tube = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 0.12), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xdde8ff, emissiveIntensity: 1.6 })); tube.position.set(9, 2.95, -2.5); scene.add(tube);
   // the schematic + a live mimic board on the back wall
   const mimicCanvas = document.createElement('canvas'); mimicCanvas.width = 768; mimicCanvas.height = 384;
   const mimicTex = new THREE.CanvasTexture(mimicCanvas); mimicTex.colorSpace = THREE.SRGBColorSpace;
@@ -338,12 +354,12 @@ export async function chapter2(game, opts = {}) {
   const emerg = [];
   for (const [x, y, z, rot, inten, flick] of [[0, 2.7, -4.85, R.N, 3.2, 0], [-17.85, 3.2, 4, R.E, 3.5, 0], [17.85, 3.2, 12, R.W, 3, 1], [0, 2.6, 29.85, R.S, 2.6, 0], [27.85, 2.6, 18, R.W, 2.2, 2]]) {
     const e = PP.emergencyLight(); e.position.set(x, y, z); e.rotation.y = rot; e.userData.dynamic = true; scene.add(e);
-    const l = new THREE.PointLight(0xffb468, inten * 4, 13, 1.7); l.position.copy(V(x, y - 0.25, z).add(front(rot, 0.4))); scene.add(l);
-    emerg.push({ e, l, base: inten * 4, flick });
+    const l = new THREE.PointLight(0xffb468, inten * 1.8, 12, 1.7); l.position.copy(V(x, y - 0.25, z).add(front(rot, 0.4))); scene.add(l);
+    emerg.push({ e, l, base: inten * 1.8, flick });
   }
   // caged lamps on the emergency circuit, hanging in the hall: pools of dirty light on the water
-  const bulbMatOn = new THREE.MeshStandardMaterial({ color: 0xffe2b0, emissive: 0xffb060, emissiveIntensity: 6 });
-  for (const [x, z, inten, flick] of [[-9, 9.5, 34, 0], [8.5, 4.5, 30, 0], [3, 16, 26, 2], [-3, -2.4, 18, 0], [23, 18, 14, 1]]) {
+  const bulbMatOn = new THREE.MeshStandardMaterial({ color: 0xffe2b0, emissive: 0xffb060, emissiveIntensity: 2 });
+  for (const [x, z, inten, flick] of [[-9, 9.5, 13, 0], [8.5, 4.5, 11, 0], [3, 16, 10, 2], [-3, -2.4, 7, 0], [23, 18, 6, 1]]) {
     const top = x > 18 ? ROOMS.gallery.h : z < 0 ? ROOMS.lobby.h : HALL.h - 0.45, y = Math.min(top - 0.9, 3.3);
     const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, top - y, 5), M.plasticBlack || fbMat); cord.position.set(x, (top + y) / 2 + 0.1, z); scene.add(cord);
     const shade = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.16, 18, 1, true), M.steelPaint || fbMat); shade.position.set(x, y + 0.12, z); shade.material.side = THREE.DoubleSide; scene.add(shade);
@@ -381,7 +397,7 @@ export async function chapter2(game, opts = {}) {
 
   // ---------------------------------------------------------------- lighting
   const hemi = new THREE.HemisphereLight(0x46566a, 0x0c0e0c, game.params.has('bright') ? 3 : 0.8); scene.add(hemi);
-  game.flashlight.base = 230; game.flashlight.light.angle = 0.5; game.flashlight.light.distance = 34;
+  game.flashlight.base = 105; game.flashlight.light.angle = 0.5; game.flashlight.light.distance = 34;
   const lit = new Set();
   const ZONES = { east: [ROOMS.east], west: [ROOMS.west], north: [ROOMS.north], control: [ROOMS.control], stair: [ROOMS.stair] };
   lit.add('control'); lit.add('stair');
@@ -403,7 +419,7 @@ export async function chapter2(game, opts = {}) {
   // always: an environment captured once from the middle of the hall for the surface's sheen
   const quality = game.settings?.quality || 'high';
   let reflection = null;
-  if (quality !== 'low') reflection = addFloorReflection(scene, renderer, [water.mesh.material], { y: water.level, size: 80, strength: 0.95, scale: quality === 'ultra' ? 0.55 : quality === 'high' ? 0.4 : 0.3, every: quality === 'medium' ? 2 : 1 });
+  if (quality !== 'low') reflection = addFloorReflection(scene, renderer, [water.mesh.material], { y: water.level, size: 80, strength: 0.38, scale: quality === 'ultra' ? 0.55 : quality === 'high' ? 0.4 : 0.3, every: quality === 'medium' ? 2 : 1 });
   if (reflection) reflection.reflector.position.set(0, water.level - 0.001, 16);
   function captureEnv() {
     try {
@@ -411,7 +427,7 @@ export async function chapter2(game, opts = {}) {
       const cam = new THREE.CubeCamera(0.1, 60, rt); cam.position.set(0, 1.6, 9); scene.add(cam);
       water.mesh.visible = false; cam.update(renderer, scene); water.mesh.visible = water.level > 0.015;
       const pm = new THREE.PMREMGenerator(renderer); const env = pm.fromCubemap(rt.texture).texture; pm.dispose(); rt.dispose(); cam.removeFromParent();
-      water.mesh.material.envMap = env; water.mesh.material.envMapIntensity = 2.2; water.mesh.material.needsUpdate = true;
+      water.mesh.material.envMap = env; water.mesh.material.envMapIntensity = 0.45; water.mesh.material.needsUpdate = true;
     } catch (e) { console.warn('env capture', e); }
   }
 
@@ -426,14 +442,15 @@ export async function chapter2(game, opts = {}) {
   B.attach({ colliders: [], bounds: { min: V(-28, 0, -5), max: V(28, 0, 40) } });
   const blockB = creatureBlockers(B);
   player.colliders = colliders;
+  player.groundAt = stairGround;
   player.blockers = () => (B.object.visible ? blockB() : []);
-  const hunter = new Hunter({ creature: B, grid, game, patrol, isLit, onKill: () => die() });
-  hunter.script(true); hunter.aggression = 0.85;
+  const hunter = new Hunter({ creature: B, grid, game, patrol, isLit, onKill: () => die(), hunt: 0.45 });
+  hunter.script(true); hunter.aggression = 0.95;
   B.object.visible = false;
 
   // ---------------------------------------------------------------- the lamp
   const lampModel = P.halideLamp ? P.halideLamp() : new THREE.Group();
-  const lamp = new HalideLamp(game, lampModel, { cells: 4, recharge: 6.5 });
+  const lamp = new HalideLamp(game, lampModel, { cells: 3, recharge: 11 });
   lamp.give();
   lamp.targets.push({ point: () => B.bone.upperChest.getWorldPosition(V(0, 0, 0)), onFlash: (dist) => { if (B.object.visible && hunter.flashHit(dist)) CH.flashes = (CH.flashes || 0) + 1; } });
   game.flashlight.on = true;
@@ -533,7 +550,7 @@ export async function chapter2(game, opts = {}) {
     p.state = 'running'; CH.pumps[p.i] = true;
     p.panel.userData.setLamp('green'); p.obj.userData.setRunning?.(true); p.sound.set(true);
     sfx.powerUp(); hunter.noise(p.at, 16);
-    p.sp.intensity = 160; p.sp.shadow.needsUpdate = true; p.lamp.userData.setOn?.(true); lit.add(p.room);
+    p.sp.intensity = 65; p.sp.shadow.needsUpdate = true; p.lamp.userData.setOn?.(true); lit.add(p.room);
     waterTarget = WATER[pumpsOn()];
     setTimeout(captureEnv, 300);
     checkpoint(); refreshObjective();
@@ -669,12 +686,12 @@ export async function chapter2(game, opts = {}) {
     Object.assign(pdoorBox, { minX: 1e6, maxX: 1e6 });
     CH.done = true; refreshObjective(); checkpoint();
     await say(OK, 'Stair B. It comes out in the archive. Go, Rook. Don\'t look back down.', 4);
-    await d.until(() => player.pos.x < -6.5);
+    await d.until(() => player.groundY > 1.7);
     await endChapter();
   }
   async function endChapter() {
     player.frozen = true; hunter.script(true);
-    player.lookAt(V(-10, 2.6, -2.2), 1.2);
+    player.lookAt(V(-11, 4.4, -2.0), 1.2);
     sfx.setTension(0.2);
     await ui.fadeTo(1, 2.5);
     for (const p of pumps) p.sound.stop?.(1);
@@ -729,7 +746,7 @@ export async function chapter2(game, opts = {}) {
   }
 
   // restore a checkpoint
-  for (const p of pumps) if (CH.pumps[p.i]) { p.state = 'running'; p.panel.userData.setLamp('green'); p.panel.userData.setNeedle(0.7); p.obj.userData.setRunning?.(true); p.sound.set(true); p.sp.intensity = 160; p.lamp.userData.setOn?.(true); lit.add(p.room); }
+  for (const p of pumps) if (CH.pumps[p.i]) { p.state = 'running'; p.panel.userData.setLamp('green'); p.panel.userData.setNeedle(0.7); p.obj.userData.setRunning?.(true); p.sound.set(true); p.sp.intensity = 65; p.lamp.userData.setOn?.(true); lit.add(p.room); }
   water.setLevel(WATER[pumpsOn()]); waterTarget = water.level;
   if (CH.halloran === 'saved') { halloran.position.set(26.9, 0, 23.4); halloran.visible = false; fallen.rotation.z = 0; }
   if (CH.halloran === 'left') { halloran.visible = false; }
@@ -741,7 +758,7 @@ export async function chapter2(game, opts = {}) {
   captureEnv();
   window.__ch2 = { CH, hunter, B, player, interact, grid, water, pumps, use: (re) => { const it = interact.items.find((i) => i.enabled() && re.test(typeof i.label === 'function' ? i.label() : i.label)); if (it) it.onUse(it); return !!it; } };
 
-  if (game.params.get('cp') === 'still') { ui.setFade(0); lift.userData.setDoors?.(1); applyDebugCamera(game); if (game.params.has('lit')) for (const p of pumps) { p.sp.intensity = 160; p.lamp.userData.setOn?.(true); } }
+  if (game.params.get('cp') === 'still') { ui.setFade(0); lift.userData.setDoors?.(1); applyDebugCamera(game); if (game.params.has('lit')) for (const p of pumps) { p.sp.intensity = 65; p.lamp.userData.setOn?.(true); } }
   else game.run(async () => { await opening(); game.run(watchHalloran); });
 
   let ambT = 20, dripT = 0, wakeT = 0, wadeT = 0, shadowFrame = 0;

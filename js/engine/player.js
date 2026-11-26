@@ -24,8 +24,10 @@ export class Player {
     this.shake = 0;
     this.sens = 0.0022;
     this.speedScale = 1;
+    this.groundAt = null;       // (x, z) -> floor height (stairs, tiers); null = flat floor at 0
+    this.groundY = 0;
   }
-  place(x, z, yaw = 0, pitch = 0) { this.pos.set(x, 0, z); this.yaw = yaw; this.pitch = pitch; this.vel.set(0, 0, 0); }
+  place(x, z, yaw = 0, pitch = 0) { this.pos.set(x, 0, z); this.yaw = yaw; this.pitch = pitch; this.vel.set(0, 0, 0); this.groundY = this.groundAt ? this.groundAt(x, z) : 0; }
   // smoothly turn the view toward a world point (used by scripted moments)
   lookAt(p, rate = 3) {
     const e = this.camera.position;
@@ -80,6 +82,11 @@ export class Player {
     const step = this.vel.clone().multiplyScalar(dt);
     this.pos.add(step);
     if (!this.frozen) this.collide(this.pos); // frozen: scripted placement (hiding spots) wins
+    // stairs: follow the floor height smoothly (fast going down, a touch slower stepping up)
+    const gy = this.groundAt ? this.groundAt(this.pos.x, this.pos.z) : 0;
+    this.groundY += (gy - this.groundY) * (1 - Math.exp(-dt * (gy > this.groundY ? 12 : 16)));
+    if (Math.abs(gy - this.groundY) < 0.002) this.groundY = gy;
+    this.pos.y = this.groundY;
     const speed = this.vel.length();
     this.running = run && speed > 2;
 
@@ -93,7 +100,7 @@ export class Player {
     const k = Math.min(speed, 1.6);
     const bobY = Math.sin(this.bob * 2) * 0.022 * k, bobX = Math.cos(this.bob) * 0.014 * k;
     const cam = this.camera;
-    cam.position.set(this.pos.x, this.eyeCur + bobY + Math.sin(time * 0.7) * 0.004, this.pos.z).addScaledVector(right, bobX);
+    cam.position.set(this.pos.x, this.groundY + this.eyeCur + bobY + Math.sin(time * 0.7) * 0.004, this.pos.z).addScaledVector(right, bobX);
     cam.rotation.order = 'YXZ';
     cam.rotation.set(this.pitch + Math.sin(time * 0.5) * 0.003, this.yaw, Math.cos(this.bob) * 0.004 * speed);
     if (this.shake > 0.01) {

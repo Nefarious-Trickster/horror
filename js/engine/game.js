@@ -9,6 +9,13 @@ import { createPost } from '../post.js';
 import { settings } from './settings.js';
 import { staticBatch } from './batch.js';
 
+// A roughness floor for every lit material: a torch held a metre from polished metal or gloss paint
+// otherwise produces pinpoint highlights hundreds of times brighter than anything else in the frame.
+// Materials that really are mirror-like (water, glass) opt out with defines.GLOSSY.
+if (!THREE.ShaderChunk.roughnessmap_fragment.includes('GLOSSY')) {
+  THREE.ShaderChunk.roughnessmap_fragment += '\n#ifndef GLOSSY\n\troughnessFactor = max( roughnessFactor, 0.26 );\n#endif\n';
+}
+
 // resolution cap and shadow detail per quality tier
 const TIERS = {
   low: { pr: 0.75, shadow: 1024, soft: false },
@@ -141,7 +148,7 @@ export class Game {
     for (const c of [...this.camera.children]) this.camera.remove(c); // level viewmodels / lamp lights
     this.scene.add(this.camera);
     this.director = new Director();
-    this.player.colliders = []; this.player.blockers = () => []; this.player.frozen = false; this.player.lookLocked = false; this.player.releaseLook();
+    this.player.colliders = []; this.player.blockers = () => []; this.player.groundAt = null; this.player.groundY = 0; this.player.frozen = false; this.player.lookLocked = false; this.player.releaseLook();
     this.flashlight = new Flashlight(this.scene, this.cookie, { shadowSize: this.tier.shadow });
     this.post?.dispose?.();
     this.post = createPost(this.renderer, this.scene, this.camera, { quality: settings.quality, ao: !params.has('noao') });

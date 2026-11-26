@@ -650,9 +650,9 @@ function buildMaterials() {
   M.glass = new THREE.MeshStandardMaterial({ color: 0xbfcfd0, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false, envMapIntensity: 2 });
   // lamps / LEDs: shared on/off pairs (pieces swap them)
   M.lampOff = std({ color: 0xd8d2c0, roughness: 0.25, emissive: 0x000000 });
-  M.lampOn = std({ color: 0xfff1d0, roughness: 0.25, emissive: 0xffe2a8, emissiveIntensity: 6 });
+  M.lampOn = std({ color: 0xfff1d0, roughness: 0.4, emissive: 0xffe2a8, emissiveIntensity: 2.2 });
   M.bulbOff = new THREE.MeshStandardMaterial({ color: 0xcfc8b8, roughness: 0.1, transparent: true, opacity: 0.7 });
-  M.bulbOn = new THREE.MeshStandardMaterial({ color: 0xffe6b0, emissive: 0xffc070, emissiveIntensity: 8, roughness: 0.2 });
+  M.bulbOn = new THREE.MeshStandardMaterial({ color: 0xffe6b0, emissive: 0xffc070, emissiveIntensity: 2.6, roughness: 0.4 });
   M.ledOff = std({ color: 0x202322, roughness: 0.3 });
   M.ledGreen = std({ color: 0x0a3010, emissive: 0x30ff60, emissiveIntensity: 3 });
   M.ledRed = std({ color: 0x300808, emissive: 0xff2a1a, emissiveIntensity: 3 });

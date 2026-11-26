@@ -75,7 +75,7 @@ const TAPE = [
 export async function chapter1(game, opts = {}) {
   const { scene, player, ui, director: d, interact, renderer } = game;
   const say = (who, text, dur) => ui.say(who, text, dur);
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.05;
   scene.background = new THREE.Color(0x020203);
   scene.fog = new THREE.FogExp2(0x030405, 0.04);
   game.surface = 'concrete';
@@ -319,7 +319,7 @@ export async function chapter1(game, opts = {}) {
 
   // ---------------------------------------------------------------- lighting
   const hemi = new THREE.HemisphereLight(0x4a5870, 0x14100c, game.params.has('bright') ? 3 : 0.9); scene.add(hemi);
-  game.flashlight.base = 230; game.flashlight.light.angle = 0.5; game.flashlight.light.distance = 34;
+  game.flashlight.base = 105; game.flashlight.light.angle = 0.5; game.flashlight.light.distance = 34;
   const redA = new THREE.PointLight(0xff2010, 2.2, 10, 1.8); redA.position.set(-12, 2.7, -4); scene.add(redA);
   const redB = new THREE.PointLight(0xff1c0c, 2.6, 14, 1.8); redB.position.set(-27, 3.0, -2); scene.add(redB);
   // per-zone work lights (stands + spotlights); off until powered
@@ -331,14 +331,14 @@ export async function chapter1(game, opts = {}) {
     sp.position.set(x, 1.9, z); sp.target.position.set(tx, 0, tz);
     if (shadow) { sp.castShadow = true; sp.shadow.mapSize.set(1024, 1024); sp.shadow.bias = -0.0006; sp.shadow.normalBias = 0.03; sp.shadow.camera.near = 0.3; sp.shadow.autoUpdate = false; }
     scene.add(sp, sp.target);
-    (zoneLights[zone] ??= []).push({ stand, light: sp, base: 190 });
+    (zoneLights[zone] ??= []).push({ stand, light: sp, base: 80 });
   }
   workLight('bay', -42, -9, -47, -15, true); workLight('bay', -50, -19, -45, -11, false);
   workLight('electrical', -33, 13.2, -37, 8, true); workLight('electrical', -24.8, 6.8, -29, 12, false);
   workLight('south', -16, -19, -26, -14, true); workLight('south', -39, -13, -30, -18, false);
   workLight('west', -41, 13.2, -47, 6, true); workLight('west', -41, -5, -48, 2, false);
   // the site office has its own desk lamp on a battery (always on: a pool of light to find)
-  const deskLamp = new THREE.PointLight(0xffc88a, 7, 7, 1.7); deskLamp.position.copy(opt('desk', V(-19.5, 1.2, 11.5))).add(V(0, 0.45, 0)); scene.add(deskLamp);
+  const deskLamp = new THREE.PointLight(0xffc88a, 3.2, 7, 1.7); deskLamp.position.copy(opt('desk', V(-19.5, 1.2, 11.5))).add(V(0, 0.45, 0)); scene.add(deskLamp);
   // a bare bulb on the temporary supply, hanging over the column by the bay door; it comes on with the generator
   const bulbAt = V(-34.0, H - 0.95, -7.7);
   const bulbCord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, H - bulbAt.y, 5), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.7 }));
@@ -386,7 +386,7 @@ export async function chapter1(game, opts = {}) {
 
   // ---------------------------------------------------------------- the lamp
   const lampModel = P.halideLamp ? P.halideLamp() : new THREE.Group();
-  const lamp = new HalideLamp(game, lampModel, { cells: 4, recharge: 6.5 });
+  const lamp = new HalideLamp(game, lampModel, { cells: 3, recharge: 11 });
   lamp.give();
   lamp.targets.push({ point: () => B.bone.upperChest.getWorldPosition(V(0, 0, 0)), onFlash: (dist) => { if (B.object.visible && hunter.flashHit(dist)) { CH.flashes = (CH.flashes || 0) + 1; } } });
   game.flashlight.on = true;
@@ -679,7 +679,7 @@ export async function chapter1(game, opts = {}) {
         else if (far) sfx.creatureCrack(at);
       }
       // the bare bulb: on with the generator, never steady
-      if (bulbOn) { const f = Math.random() < 0.04 ? 0.15 : 0.85 + Math.sin(t * 13.7) * 0.08 + Math.sin(t * 31.1) * 0.05; bulbLight.intensity = 16 * f; bulb.material = f > 0.5 ? (M.bulbOn || bulb.material) : (M.bulbOff || bulb.material); }
+      if (bulbOn) { const f = Math.random() < 0.04 ? 0.15 : 0.85 + Math.sin(t * 13.7) * 0.08 + Math.sin(t * 31.1) * 0.05; bulbLight.intensity = 7 * f; bulb.material = f > 0.5 ? (M.bulbOn || bulb.material) : (M.bulbOff || bulb.material); }
       // emergency light flicker
       redB.intensity = 2.6 * (0.75 + 0.25 * Math.sin(t * 9.1) * Math.sin(t * 2.3)) * (Math.random() < 0.01 ? 0.2 : 1);
       // throttled shadows: lit zones only, a few times a second

@@ -69,7 +69,9 @@ export function createPost(renderer, scene, camera, { quality = 'high', ao = tru
     fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
       void main() { vec4 c = texture2D(tDiffuse, vUv);
         if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
-        gl_FragColor = vec4(min(c.rgb, vec3(64.0)), c.a); }`,
+        float m = max(max(c.r, c.g), c.b);
+        if (m > 2.2) c.rgb *= 2.2 / m; // no highlight brighter than this: keeps hot specks from blooming into suns
+        gl_FragColor = c; }`,
   });
   sanitize.enabled = Q >= 1;
   composer.addPass(sanitize);
@@ -91,7 +93,7 @@ export function createPost(renderer, scene, camera, { quality = 'high', ao = tru
       const u = film.uniforms;
       const L = name === 'clinical' ? { uVig: 0.4, uGrain: 0.3, uSat: 0.95, uCA: 0.45, uWarm: 0.2 } : { uVig: 1, uGrain: 1, uSat: 0.82, uCA: 1, uWarm: 1 };
       for (const [k, v] of Object.entries(L)) u[k].value = v;
-      bloom.strength = name === 'clinical' ? 0.14 : 0.45; bloom.threshold = name === 'clinical' ? 0.95 : 0.82;
+      bloom.strength = name === 'clinical' ? 0.12 : 0.28; bloom.threshold = name === 'clinical' ? 1.0 : 0.95;
     },
     get look() { return look; },
     render(t, fear) { film.uniforms.uTime.value = t; film.uniforms.uFear.value = fear; composer.render(); },

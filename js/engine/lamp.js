@@ -36,7 +36,7 @@ export class HalideLamp {
     const cam = this.game.camera, fwd = cam.getWorldDirection(new THREE.Vector3());
     for (const t of this.targets) {
       const p = t.point().clone().sub(cam.position), d = p.length();
-      if (d < 10.5 && p.normalize().dot(fwd) > Math.cos(0.42)) t.onFlash(d);
+      if (d < 12 && p.normalize().dot(fwd) > Math.cos(0.3)) t.onFlash(d); // aim for the chest
     }
     this.onFlash?.();
   }
