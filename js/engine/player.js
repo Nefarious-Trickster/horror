@@ -41,6 +41,7 @@ export class Player {
     for (let pass = 0; pass < 2; pass++) {
       for (const c of this.colliders) {
         if (c.disabled) continue;
+        if (c.y1 !== undefined && (this.groundY + 1.5 < c.y0 || this.groundY + 0.25 > c.y1)) continue; // another floor
         const cx = clamp(p.x, c.minX, c.maxX), cz = clamp(p.z, c.minZ, c.maxZ);
         const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
         if (d < r) {

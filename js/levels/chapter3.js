@@ -669,8 +669,8 @@ export async function chapter3(game, opts = {}) {
     if (CH.badge) save.set('badge', true);
     await say(OK, 'The adit lift goes down four hundred metres. The radio won\'t follow you all the way.', 4.4);
     await say(OK, 'Rook. Whatever you find down there. It isn\'t him any more.', 4);
-    await ui.card('CHAPTER FOUR', 'THE NEST<br><br>in development', 5);
-    location.href = location.pathname;
+    const { chapter4 } = await import('./chapter4.js');
+    await game.load(chapter4, {});
   }
 
   // ---------------------------------------------------------------- death

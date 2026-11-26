@@ -6,7 +6,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export function buildRooms(scene, ROOMS, DOORS, { wallMat, floorMats = {}, ceilMat, worldUV, cell = 0.1, thickness = 0.3, bounds } = {}) {
+//   segment: tessellate walls/ceilings into cells this size; deform(geometry, 'wall'|'ceil') then bends them (rock)
+export function buildRooms(scene, ROOMS, DOORS, { wallMat, floorMats = {}, ceilMat, worldUV, cell = 0.1, thickness = 0.3, bounds, segment = 0, deform = null } = {}) {
   const colliders = [], sightBlockers = [];
   const list = Object.entries(ROOMS);
   const b = bounds || list.reduce((a, [, r]) => ({ x0: Math.min(a.x0, r.x0 - 2), x1: Math.max(a.x1, r.x1 + 2), z0: Math.min(a.z0, r.z0 - 2), z1: Math.max(a.z1, r.z1 + 2) }), { x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9 });
@@ -17,16 +18,17 @@ export function buildRooms(scene, ROOMS, DOORS, { wallMat, floorMats = {}, ceilM
   for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) ids[i + j * NX] = roomAt(b.x0 + (i + 0.5) * C, b.z0 + (j + 0.5) * C);
   const hOf = (k) => (k >= 0 ? list[k][1].h : 0);
   const geos = [], T = thickness;
-  const add = (x0, x1, z0, z1, y0, y1, collide) => {
+  const add = (x0, x1, z0, z1, y0, y1, collide, band) => {
     if (y1 - y0 < 0.01) return;
-    const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-    worldUV?.(g, wallMat?.userData?.tile || 2.4); geos.push(g);
-    if (collide) { const bx = { minX: x0, maxX: x1, minZ: z0, maxZ: z1 }; colliders.push(bx); sightBlockers.push(bx); }
+    const sg = (l) => (segment ? Math.max(1, Math.ceil(l / segment)) : 1);
+    const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0, sg(x1 - x0), sg(y1 - y0), sg(z1 - z0)); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    worldUV?.(g, wallMat?.userData?.tile || 2.4); deform?.(g, 'wall'); geos.push(g);
+    if (collide) { const bx = { minX: x0, maxX: x1, minZ: z0, maxZ: z1 }; if (band != null) { bx.y0 = -1; bx.y1 = band; } colliders.push(bx); if (band == null) sightBlockers.push(bx); }
   };
   const lintel = (run) => (run.door.top ?? (run.door.wide ? Math.min(run.ha || 9, run.hb || 9) : 2.5));
   for (let i = 0; i < NX - 1; i++) {
     let run = null;
-    const flush = () => { if (!run) return; const x = b.x0 + (i + 1) * C; if (run.door) add(x - T / 2, x + T / 2, run.z0, run.z1, lintel(run), Math.max(run.ha, run.hb), false); else add(x - T / 2, x + T / 2, run.z0, run.z1, 0, Math.max(run.ha, run.hb), true); run = null; };
+    const flush = () => { if (!run) return; const x = b.x0 + (i + 1) * C; if (run.door) { if (run.door.lo) add(x - T / 2, x + T / 2, run.z0, run.z1, 0, run.door.lo, true, run.door.lo - 0.6); add(x - T / 2, x + T / 2, run.z0, run.z1, lintel(run), Math.max(run.ha, run.hb), false); } else add(x - T / 2, x + T / 2, run.z0, run.z1, 0, Math.max(run.ha, run.hb), true); run = null; };
     for (let j = 0; j < NZ; j++) {
       const a = ids[i + j * NX], c = ids[i + 1 + j * NX], z = b.z0 + j * C, x = b.x0 + (i + 1) * C;
       if (a === c) { flush(); continue; }
@@ -38,7 +40,7 @@ export function buildRooms(scene, ROOMS, DOORS, { wallMat, floorMats = {}, ceilM
   }
   for (let j = 0; j < NZ - 1; j++) {
     let run = null;
-    const flush = () => { if (!run) return; const z = b.z0 + (j + 1) * C; if (run.door) add(run.x0, run.x1, z - T / 2, z + T / 2, lintel(run), Math.max(run.ha, run.hb), false); else add(run.x0, run.x1, z - T / 2, z + T / 2, 0, Math.max(run.ha, run.hb), true); run = null; };
+    const flush = () => { if (!run) return; const z = b.z0 + (j + 1) * C; if (run.door) { if (run.door.lo) add(run.x0, run.x1, z - T / 2, z + T / 2, 0, run.door.lo, true, run.door.lo - 0.6); add(run.x0, run.x1, z - T / 2, z + T / 2, lintel(run), Math.max(run.ha, run.hb), false); } else add(run.x0, run.x1, z - T / 2, z + T / 2, 0, Math.max(run.ha, run.hb), true); run = null; };
     for (let i = 0; i < NX; i++) {
       const a = ids[i + j * NX], c = ids[i + (j + 1) * NX], x = b.x0 + i * C, z = b.z0 + (j + 1) * C;
       if (a === c) { flush(); continue; }
@@ -56,7 +58,8 @@ export function buildRooms(scene, ROOMS, DOORS, { wallMat, floorMats = {}, ceilM
     const f = new THREE.BoxGeometry(r.x1 - r.x0 + T, 0.2, r.z1 - r.z0 + T); f.translate((r.x0 + r.x1) / 2, -0.1, (r.z0 + r.z1) / 2);
     worldUV?.(f, floorMats[key]?.userData?.tile || 2); if (!fl.has(key)) fl.set(key, []); fl.get(key).push(f);
     if (r.ceiling === false) continue;
-    const c = new THREE.BoxGeometry(r.x1 - r.x0 + T, 0.3, r.z1 - r.z0 + T); c.translate((r.x0 + r.x1) / 2, r.h + 0.15, (r.z0 + r.z1) / 2); worldUV?.(c, 2.6); ce.push(c);
+    const sg = (l) => (segment ? Math.max(1, Math.ceil(l / segment)) : 1);
+    const c = new THREE.BoxGeometry(r.x1 - r.x0 + T, 0.3, r.z1 - r.z0 + T, sg(r.x1 - r.x0 + T), 1, sg(r.z1 - r.z0 + T)); c.translate((r.x0 + r.x1) / 2, r.h + 0.15, (r.z0 + r.z1) / 2); worldUV?.(c, ceilMat?.userData?.tile || 2.6); deform?.(c, 'ceil'); ce.push(c);
   }
   for (const d of DOORS) { const f = new THREE.BoxGeometry(d.x1 - d.x0 + 0.4, 0.2, d.z1 - d.z0 + 0.4); f.translate((d.x0 + d.x1) / 2, -0.1, (d.z0 + d.z1) / 2); worldUV?.(f, 2); if (!fl.has('default')) fl.set('default', []); fl.get('default').push(f); }
   for (const [key, g] of fl) { const m = new THREE.Mesh(mergeGeometries(g), floorMats[key] || floorMats.default); m.receiveShadow = true; scene.add(m); }

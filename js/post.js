@@ -12,11 +12,11 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 const FilmShader = {
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uFear: { value: 0 },
-    uVig: { value: 1 }, uGrain: { value: 1 }, uSat: { value: 0.8 }, uCA: { value: 1 }, uWarm: { value: 1 }, uSharp: { value: 0.25 },
+    uVig: { value: 1 }, uGrain: { value: 1 }, uSat: { value: 0.8 }, uCA: { value: 1 }, uWarm: { value: 1 }, uSharp: { value: 0.25 }, uExpo: { value: 0 },
   },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform float uTime, uFear, uVig, uGrain, uSat, uCA, uWarm, uSharp; uniform vec2 uRes; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime, uFear, uVig, uGrain, uSat, uCA, uWarm, uSharp, uExpo; uniform vec2 uRes; varying vec2 vUv;
     float h(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
     void main() {
       vec2 c = vUv - 0.5;
@@ -30,6 +30,17 @@ const FilmShader = {
       vec2 px = 1.0 / uRes;
       vec3 nb = texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb;
       col = max(col + (col - nb * 0.25) * uSharp, 0.0);
+      if (uExpo > 0.01) {
+        // exposure: the image doubles and drifts, colour drains toward a sick grey-green, the edges close in
+        float e = uExpo, wob = sin(uTime * 0.7) * 0.5 + sin(uTime * 1.9) * 0.3;
+        vec2 o = vec2(wob * 0.012, cos(uTime * 0.53) * 0.006) * e;
+        vec3 ghost = texture2D(tDiffuse, vUv + o).rgb;
+        col = mix(col, max(col, ghost), 0.45 * e);
+        float lg = dot(col, vec3(0.299, 0.587, 0.114));
+        col = mix(col, vec3(lg) * vec3(0.86, 1.0, 0.82), 0.5 * e);
+        float pulse = 0.5 + 0.5 * sin(uTime * (1.1 + e));
+        col *= mix(1.0, smoothstep(0.85 - 0.35 * e - 0.05 * pulse, 0.15, length(c * vec2(1.0, 1.3))), e * 0.85);
+      }
       float l = dot(col, vec3(0.299, 0.587, 0.114));
       col = mix(vec3(l), col, uSat);
       col *= mix(vec3(1.0), mix(vec3(0.86, 1.0, 1.02), vec3(1.04, 1.0, 0.88), smoothstep(0.0, 0.5, l)), uWarm);
@@ -96,7 +107,7 @@ export function createPost(renderer, scene, camera, { quality = 'high', ao = tru
       bloom.strength = name === 'clinical' ? 0.12 : 0.28; bloom.threshold = name === 'clinical' ? 1.0 : 0.95;
     },
     get look() { return look; },
-    render(t, fear) { film.uniforms.uTime.value = t; film.uniforms.uFear.value = fear; composer.render(); },
+    render(t, fear, expo = 0) { film.uniforms.uTime.value = t; film.uniforms.uFear.value = fear; film.uniforms.uExpo.value = expo; composer.render(); },
     dispose() { composer.dispose?.(); rt.dispose(); gtao?.dispose?.(); },
   };
 }

@@ -8,7 +8,8 @@ A first-person horror game in a private biocontainment facility. You work the C-
 - **Chapter Two (Pump Level):** fully playable. The freight lift lets you out onto a flooded service sublevel, knee-deep and dark. Start three drainage pumps in order (prime each one and close the bleed valve while the gauge needle is in the green; too late and the relief valve bangs). Every step splashes and B is in the water with you: you'll see its wake before its body. Sgt. Halloran is pinned in the cable gallery, and freeing him is loud. Save him or leave him; it's remembered.
 - **Chapter Three (The Archive):** fully playable. The records vault and the old observation theatre. The mine lift code is on microfiche in the vault's restricted cage, behind mobile shelving you have to crank open (loudly) while B hunts the stacks. The reading room runs off the theatre's circuit, so you climb the seating to the projection booth. The LANTERN reel can be threaded and run: the trial footage is projected onto the screen, and B comes to watch it. Then the choice: burn the files as Okafor orders, or upload them to the audit relay.
 - **Creature study:** a room for watching the monster's animations.
-- **Chapters 4 and 5:** in development.
+- **Chapter Four (The Nest):** fully playable. The cage drops you four hundred metres to Level 400 of the old mine. A phone rings in the abandoned station. Switch on the drift lighting and see what has been hung on every timber set; find the 2019 survey camp; crawl the return airway into Chamber Five, which B has made into a copy of Lind's office, with chairs in rows and four missing staff asleep under lab coats. Wear a respirator (M) or the air raises your exposure. Hide when it comes home. Then Okafor starts the purge (a twenty-minute clock) and you choose how this ends: the lure, the lamp's overcharge, or, if you followed Lind's trail all the way (his badge from Chapter Three and all three tapes), the last dose of LANTERN-0. The first time it catches you down here it only holds you.
+- **Chapter Five (Lights Out):** fully playable, with all five endings. The purge cuts the hoist at Level 200 and something is on the roof of your cage. Pump the core door open, climb the core while the lights die below you and the gas rises up the shaft, pull three isolators on Level 100 as the purge controller sheds the lights, stop the fan, and reach the surface hoist, where B is already waiting. The confrontation depends on your plan; the ending depends on everything (`docs/STORY.md`).
 
 ## Run it
 
@@ -16,7 +17,7 @@ A first-person horror game in a private biocontainment facility. You work the C-
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. Add `?level=chapter1`, `?level=chapter2` or `?level=chapter3` to jump straight to a chapter. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
+Then open <http://localhost:8000>. Add `?level=chapter1` … `?level=chapter5` to jump straight to a chapter. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
 
 | Input | Action |
 | --- | --- |
@@ -28,6 +29,8 @@ Then open <http://localhost:8000>. Add `?level=chapter1`, `?level=chapter2` or `
 | Esc | pause menu and settings (mouse sensitivity, invert Y, field of view, quality, FPS counter) |
 | F | flashlight |
 | Right mouse / Q | flash the halide lamp (once you have it). Aim for the chest, up close. It works less each time in quick succession; by the third flash it covers its eyes and charges |
+| Hold right mouse / Q | Chapter 5, with the overcharge armed: hold past a full charge to discharge every cell at once (lethal under about four metres) |
+| M | put the respirator on or take it off (Chapters 4 and 5) |
 | Touch | left thumb walks, right thumb looks; on-screen buttons for use, flash, light and crouch |
 
 In the creature study you can also use: L inspection light, P freeze, and the number keys 1–0 and R for the actions below (Esc frees the mouse so you can click the panel instead).
@@ -96,6 +99,8 @@ js/main.js              boots the game, menu, level loading
 js/engine/              game core: input, player, UI, interaction, story director, asset loading
 js/levels/intro.js      the prologue: Wing C lab, specimens, tests, breach, recapture
 js/levels/testroom.js   creature study room
+js/levels/chapter1-5.js the five chapters
+js/levels/mine.js       shared pieces for chapters 4 and 5: rock tunnels, coats, sleepers, hiding, exposure, respirator, gas
 js/lab/architecture.js  Wing C building (walls, floors, cells, glass), merged per material
 js/lab/props.js         procedural lab equipment (consoles, desks, doors, benches, signs...)
 js/creature.js          creature loader, skin shader, teeth, eyes, claws
@@ -112,4 +117,4 @@ assets/                 creature model, CC0 textures (ambientCG), HDRI (Poly Hav
 ## Assets and credits
 
 - The creature, lab equipment, sound and room surfaces are generated in code.
-- Textures come from [ambientCG](https://ambientcg.com), and the hospital lighting environment from [Poly Haven](https://polyhaven.com). Both are CC0, and `tools/fetch_assets.py` re-downloads them.
+- Textures come from [ambientCG](https://ambientcg.com) and [Poly Haven](https://polyhaven.com) (`rock_wall_10`, `rocky_trail` for the mine), and the hospital lighting environment from Poly Haven. All are CC0, and `tools/fetch_assets.py` re-downloads the ambientCG set.

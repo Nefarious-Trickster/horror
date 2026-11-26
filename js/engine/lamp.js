@@ -7,6 +7,7 @@ export class HalideLamp {
   constructor(game, model, { cells = 4, recharge = 3.2 } = {}) {
     this.game = game; this.model = model; this.cells = cells; this.recharge = recharge;
     this.has = false; this.charge = 1; this.cool = 0; this.targets = []; this.onHit = null;
+    this.overcharge = false; this.hold = 0; this.onOvercharge = null; // armed on the charger: hold the trigger to discharge every cell
     this.light = new THREE.SpotLight(0xf2f6ff, 0, 22, 0.75, 0.3, 1.2);
     this.light.position.set(0.15, -0.15, 0); this.light.target.position.set(0, 0, -5);
     game.camera.add(this.light, this.light.target);
@@ -40,6 +41,18 @@ export class HalideLamp {
     }
     this.onFlash?.();
   }
+  // every cell at once: a blinding white-out; targets inside 4.5 m and the cone take it full
+  discharge() {
+    this.charge = 0; this.cool = 2.5;
+    sfx.strobeFlash(); sfx.strobeFlash(); this.game.ui.whiteFlash(1); this.light.intensity = 4000;
+    const cam = this.game.camera, fwd = cam.getWorldDirection(new THREE.Vector3());
+    let hit = false;
+    for (const t of this.targets) {
+      const p = t.point().clone().sub(cam.position), d = p.length();
+      if (d < 4.5 && p.normalize().dot(fwd) > Math.cos(0.4)) { hit = true; (t.onOvercharge || t.onFlash)(d, true); }
+    }
+    this.onOvercharge?.(hit);
+  }
   update(dt) {
     if (!this.has) return;
     this.cool = Math.max(0, this.cool - dt);
@@ -50,7 +63,20 @@ export class HalideLamp {
     const f = this.model.userData.flash; if (f) f.material.emissiveIntensity = Math.max(0.6, f.material.emissiveIntensity * Math.exp(-dt * 10));
     this.model.userData.setCharge?.(this.charge);
     this.game.ui.lampMeter(true, this.charge, this.cells);
-    if (this.game.input.wasPressed('Mouse2', 'KeyQ')) this.flash();
+    const inp = this.game.input;
+    if (!this.overcharge) { if (inp.wasPressed('Mouse2', 'KeyQ')) this.flash(); }
+    else {
+      // tap: an ordinary flash. Hold past a full charge: the overcharge, which empties the lamp
+      const down = inp.isDown('Mouse2') || inp.isDown('KeyQ');
+      if (down) {
+        if (this.hold === 0 && this.charge >= 1 - 1e-3) this._whine = sfx.strobeCharge(1.6);
+        this.hold += dt;
+        if (this.charge >= 1 - 1e-3) { const k = Math.min(1, this.hold / 1.4); this.model.position.x = 0.27 + (Math.random() - 0.5) * 0.006 * k; const f = this.model.userData.flash; if (f) f.material.emissiveIntensity = 0.6 + k * 4; this.game.player.shake = Math.max(this.game.player.shake, k * 0.15); }
+      } else if (this.hold > 0) {
+        const held = this.hold; this.hold = 0; this.model.position.x = 0.27;
+        if (held >= 1.4 && this.charge >= 1 - 1e-3) this.discharge(); else if (held < 0.6) this.flash(); else sfx.beep('deny');
+      }
+    }
     const p = this.game.player;
     this.model.position.y = -0.29 + Math.sin(this.game.time * 1.6) * 0.004 + Math.sin(p.bob * 2) * 0.006;
   }

@@ -68,9 +68,17 @@ const GAITS = {
   walk: { limbs: ['L', 'R'], home: { L: [0.14, -0.03], R: [-0.14, -0.03] }, groups: { L: 0, R: 1 }, stride: 0.82, stepTime: 0.42, height: 0.1, trigger: 0.36, lead: 0.05 },
   stalk: { limbs: ['L', 'R'], home: { L: [0.19, 0.0], R: [-0.19, -0.04] }, groups: { L: 0, R: 1 }, stride: 0.5, stepTime: 0.6, height: 0.07, trigger: 0.22, lead: 0.05 },
   run: { limbs: ['L', 'R'], home: { L: [0.13, -0.05], R: [-0.13, -0.05] }, groups: { L: 0, R: 1 }, stride: 1.7, stepTime: 0.23, height: 0.24, trigger: 0.55, lead: 0.1 },
+  // a deliberate four-beat creep: one limb at a time (hind, then the fore on that side), each hand
+  // lifted clear, carried forward and set down with care before the next limb goes
   crawl: {
     limbs: ['L', 'R', 'hL', 'hR'], home: { L: [0.2, -0.12], R: [-0.2, -0.12], hL: [0.36, 1.12], hR: [-0.36, 1.12] },
-    groups: { L: 0, hR: 0, R: 1, hL: 1 }, stride: 0.62, stepTime: 0.36, height: 0.11, trigger: 0.27, lead: 0.05,
+    groups: { L: 0, hR: 0, R: 1, hL: 1 }, seq: ['R', 'hR', 'L', 'hL'], overlap: 0.62,
+    stride: 0.7, stepTime: 0.34, handTime: 0.52, height: 0.1, handHeight: 0.24, trigger: 0.22, lead: 0.05,
+  },
+  // the old diagonal trot, for when it has to cover ground on all fours
+  crawlFast: {
+    limbs: ['L', 'R', 'hL', 'hR'], home: { L: [0.2, -0.12], R: [-0.2, -0.12], hL: [0.36, 1.12], hR: [-0.36, 1.12] },
+    groups: { L: 0, hR: 0, R: 1, hL: 1 }, stride: 0.95, stepTime: 0.26, height: 0.11, trigger: 0.36, lead: 0.05,
   },
 };
 
@@ -79,9 +87,9 @@ class Gait {
     this.a = anim;
     this.limbs = {};
     for (const k of ['L', 'R', 'hL', 'hR']) this.limbs[k] = { plant: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), pos: new THREE.Vector3(), t: 0, dur: 0.4, stepping: false, lift: 0, active: false };
-    this.phase = 0; this.lastGroup = -1;
+    this.phase = 0; this.lastGroup = -1; this.seqI = 0;
   }
-  home(k, g, out) { const h = g.home[k]; return this.a.root.localToWorld(out.set(h[0], 0, h[1])).setY(0); }
+  home(k, g, out) { const h = g.home[k]; return this.a.root.localToWorld(out.set(h[0], 0, h[1])).setY(this.a.root.position.y); }
   reset(g) {
     for (const k of Object.keys(this.limbs)) {
       const L = this.limbs[k];
@@ -98,7 +106,7 @@ class Gait {
       if (!L.active) { // limb just joined the gait (e.g. hands going down to crawl): start from where it is
         L.active = true;
         const eff = k[0] === 'h' ? this.a.B['hand' + k[1]] : this.a.B['foot' + k];
-        eff.getWorldPosition(L.plant).setY(0); L.pos.copy(L.plant); L.stepping = false;
+        eff.getWorldPosition(L.plant).setY(this.a.root.position.y); L.pos.copy(L.plant); L.stepping = false;
       }
     }
     const stepping = (grp) => g.limbs.some((k) => this.limbs[k].stepping && g.groups[k] === grp);
@@ -108,15 +116,23 @@ class Gait {
       this.home(k, g, home);
       if (L.stepping) {
         L.t += dt / L.dur;
-        const t = Math.min(L.t, 1);
+        const t = Math.min(L.t, 1), hand = k[0] === 'h';
         // keep re-aiming the landing point while the body moves
         L.to.copy(home).addScaledVector(vel, (1 - t) * L.dur + g.lead);
         if (speed > 0.05) L.to.addScaledVector(_v2.set(vel.x, 0, vel.z).normalize(), g.stride * 0.32);
-        L.pos.lerpVectors(L.from, L.to, ease(t));
-        L.lift = Math.sin(Math.PI * t) * g.height * (k[0] === 'h' ? 1.5 : 1);
-        if (L.t >= 1) { L.stepping = false; L.plant.copy(L.to); L.pos.copy(L.plant); L.lift = 0; }
+        if (hand && g.handHeight) {
+          // lift first, carry it forward high, then lower it straight down onto the spot
+          L.pos.lerpVectors(L.from, L.to, smooth(0.16, 0.86, t));
+          L.lift = Math.sin(Math.PI * Math.pow(t, 0.72)) * g.handHeight;
+        } else {
+          L.pos.lerpVectors(L.from, L.to, ease(t));
+          L.lift = Math.sin(Math.PI * t) * g.height * (hand ? 1.5 : 1);
+        }
+        if (L.t >= 1) { L.stepping = false; L.plant.copy(L.to); L.pos.copy(L.plant); L.lift = 0; L.planted = 0; }
         continue;
       }
+      L.planted = (L.planted ?? 1) + dt;
+      if (g.seq) continue;
       pred.copy(home).addScaledVector(vel, g.lead);
       const err = Math.hypot(L.plant.x - pred.x, L.plant.z - pred.z);
       const grp = g.groups[k];
@@ -127,7 +143,30 @@ class Gait {
         L.to.copy(home); this.lastGroup = grp;
       }
     }
+    if (g.seq) this.sequence(g, speed, vel, home, pred);
   }
+  // one limb after another in a fixed order; the next may lift only once the last is well into its swing
+  sequence(g, speed, vel, home, pred) {
+    const busy = g.limbs.filter((k) => this.limbs[k].stepping);
+    if (busy.length > 1 || !busy.every((k) => this.limbs[k].t > g.overlap)) return;
+    const n = g.seq.length;
+    for (let j = 0; j < (speed > 0.05 ? 1 : n); j++) {
+      const idx = (this.seqI + j) % n, k = g.seq[idx], L = this.limbs[k];
+      if (L.stepping) continue;
+      this.home(k, g, home); pred.copy(home).addScaledVector(vel, g.lead);
+      const err = Math.hypot(L.plant.x - pred.x, L.plant.z - pred.z);
+      if (err > (speed > 0.05 ? g.trigger * 0.35 : g.trigger)) {
+        const hand = k[0] === 'h';
+        L.stepping = true; L.t = 0; L.dur = (hand ? g.handTime ?? g.stepTime : g.stepTime) * (speed < 0.05 ? 1.25 : 1);
+        L.from.copy(L.plant); L.to.copy(home);
+        this.seqI = (idx + 1) % n;
+        return;
+      }
+      if (speed > 0.05) this.seqI = (idx + 1) % n; // nothing to do for this one: move on
+    }
+  }
+  // 0..1: how far into its swing a limb is (0 when planted)
+  swing(k) { const L = this.limbs[k]; return L.stepping ? Math.min(1, L.t) : 0; }
 }
 
 // ------------------------------------------------------------------ the animator
@@ -149,6 +188,7 @@ export class Animator {
     this.jaw = new Spring(0.02); this.tJaw = 0.02; this.nextJaw = 6;
     this.open = 0; this.breath = 0; this.twitch = []; this.shake = 0; this.tremble = 0;
     this.footFwd = { L: 0, R: 0 };
+    this.reach = { L: 0, R: 0 }; this.openH = { L: 0, R: 0 }; this.surge = 1; this.dt = 0;
     this.home = { x: this.root.position.x, z: this.root.position.z, heading: this.root.rotation.y };
     this.action = null; this.play('idle');
     this.gait.reset(GAITS.stand);
@@ -212,7 +252,7 @@ export class Animator {
   }
 
   update(dt, ctx) {
-    this.ctx = ctx; this.t += dt;
+    this.ctx = ctx; this.t += dt; this.dt = dt;
     const t = this.t, B = this.B;
     const P = { rot: {}, hips: [0, 0, 0], rate: 5, armRate: null, look: 1, gaze: 'forward', lookAt: null, scan: null, lookFreq: null, pitchBias: 0, jaw: null, open: 0, gait: GAITS.stand, feet: null, tremble: 0, breathe: 1, twitchiness: 0 };
     P.near = 1 - smooth(1.1, 3.6, this.distToPlayer());
@@ -260,13 +300,18 @@ export class Animator {
 
     // fingers: open/clench, idle fidget, twitches
     this.open = damp(this.open, P.open, 4, dt);
+    const crawling = P.gait?.limbs.includes('hL');
     for (const [L, s] of [['L', 1], ['R', -1]]) {
+      this.openH[L] = damp(this.openH[L], P.openH?.[L] ?? P.open, 3, dt);
+      const op = this.openH[L];
+      // a crawling hand draws its fingers in as it lifts and spreads them as it is set down
+      const air = crawling ? this.gait.limbs['h' + L].lift / ((P.gait.handHeight || 0.16)) : 0;
       for (let i = 0; i < 4; i++) for (let j = 1; j <= 3; j++) {
         const n = `f${L}${i}_${j}`;
-        const curl = vnoise(t * 0.4 + i * 1.7 + j, s * 9 + i) * 0.08 - this.open * 0.35 * (j === 1 ? 0.6 : 1) + this.twitchVal(n, 'z');
+        const curl = vnoise(t * 0.4 + i * 1.7 + j, s * 9 + i) * 0.08 - op * 0.35 * (j === 1 ? 0.6 : 1) + air * (0.35 + j * 0.12) + this.twitchVal(n, 'z');
         B[n].rotation.set(0, 0, -s * curl);
       }
-      B[`thumb${L}_2`].rotation.set(0, 0, -s * (vnoise(t * 0.3, s * 13) * 0.08 - this.open * 0.25));
+      B[`thumb${L}_2`].rotation.set(0, 0, -s * (vnoise(t * 0.3, s * 13) * 0.08 - op * 0.25 + air * 0.3));
     }
     this.root.updateMatrixWorld(true);
 
@@ -276,7 +321,7 @@ export class Animator {
     for (const k of ['L', 'R']) {
       const target = _v2;
       if (P.feet?.[k]) target.copy(P.feet[k]);
-      else { const L = this.gait.limbs[k]; target.copy(L.pos); target.y = this.ankleH + L.lift; }
+      else { const L = this.gait.limbs[k]; target.copy(L.pos); target.y = this.root.position.y + this.ankleH + L.lift; }
       solveTwoBone(B['thigh' + k], B['shin' + k], this.ext[k], target, 1);
       // keep the foot level with the floor, toes lifting through the swing
       const L = this.gait.limbs[k];
@@ -290,14 +335,15 @@ export class Animator {
     if (g?.limbs.includes('hL')) {
       for (const [k, s] of [['hL', 1], ['hR', -1]]) {
         const L = this.gait.limbs[k];
-        const target = _v2.copy(L.pos); target.y = 0.045 + L.lift;
+        const target = _v2.copy(L.pos); target.y = this.root.position.y + 0.045 + L.lift;
+        const sw = this.gait.swing(k), trail = sw > 0 ? Math.sin(Math.PI * Math.min(1, sw * 1.6)) * (1 - sw) * 1.6 : 0;
         solveTwoBone(B['upperArm' + k[1]], B['forearm' + k[1]], this.ext[k], target, -1);
         // hand flat on the floor, long fingers splayed forward
         this.root.getWorldQuaternion(_q);
         _q2.setFromAxisAngle(_v.set(0, 1, 0), s * 0.35 + L.lift * 2 * s);
         _q.multiply(_q2);
         _q2.setFromAxisAngle(_v.set(0, 0, 1), s * Math.PI / 2); _q.multiply(_q2);
-        _q2.setFromAxisAngle(_v.set(1, 0, 0), -Math.PI / 2 + L.lift * 3); _q.multiply(_q2);
+        _q2.setFromAxisAngle(_v.set(1, 0, 0), -Math.PI / 2 + L.lift * 1.6 + trail * 0.9); _q.multiply(_q2);
         setWorldQuat(B['hand' + k[1]], _q);
       }
       // remember where the IK put the arms, so standing back up blends from here instead of snapping
@@ -427,7 +473,8 @@ class Walk {
 
 function crawlPose(a, P, ph) {
   // a long-limbed thing on all fours: hips high, back nearly level, head craned up at you
-  P.gait = GAITS.crawl;
+  const sp = Math.hypot(a.vel.x, a.vel.z);
+  P.gait = sp > 1.15 ? GAITS.crawlFast : GAITS.crawl;
   P.hips = [0, -0.36 - 0.015 * Math.abs(Math.cos(ph)), 0];
   P.rot.hips = [1.22, 0.07 * Math.sin(ph), 0.05 * Math.sin(ph)];
   P.rot.spine = [0.16, -0.06 * Math.sin(ph), 0];
@@ -435,7 +482,21 @@ function crawlPose(a, P, ph) {
   P.rot.upperChest = [0.06, -0.05 * Math.sin(ph), 0];
   P.rot.neck = [-0.8, 0, 0]; P.rot.neck2 = [-0.5, 0, 0]; P.rot.head = [-0.3, 0, 0];
   P.rot.clavicleL = [0.1, 0, 0.22]; P.rot.clavicleR = [0.1, 0, -0.22];
-  P.open = 1.2; P.rate = 5; P.pitchBias = 0.1;
+  if (P.gait === GAITS.crawl) {
+    // each hand is a decision: the shoulder rises with it, the chest leans onto the other side,
+    // and the head stays dead level while the body moves under it
+    const sl = Math.sin(Math.PI * a.gait.swing('hL')), sr = Math.sin(Math.PI * a.gait.swing('hR'));
+    const pl = Math.sin(Math.PI * a.gait.swing('L')), pr = Math.sin(Math.PI * a.gait.swing('R'));
+    const shift = sr - sl;
+    P.rot.clavicleL = [0.1 - sl * 0.12, 0, 0.22 + sl * 0.16]; P.rot.clavicleR = [0.1 - sr * 0.12, 0, -0.22 - sr * 0.16];
+    P.rot.upperChest = [0.06 + (sl + sr) * 0.04, -0.05 * shift, 0.08 * shift];
+    P.rot.chest = [0.1, -0.04 * shift, 0.05 * shift];
+    P.rot.hips = [1.22, 0.05 * (pr - pl), 0.06 * (pr - pl)];
+    P.rot.head = [-0.3 - (sl + sr) * 0.05, 0.04 * shift, -0.1 * shift];
+    P.hips = [0.03 * (pl - pr), -0.36 - 0.02 * (pl + pr), 0];
+    P.rate = 7;
+  } else P.rate = 5;
+  P.open = 1.2; P.pitchBias = 0.1;
 }
 
 class Crawl extends Walk { constructor(a) { super(a, true); } }
@@ -462,14 +523,8 @@ class Stalk {
     P.hips = [0, -0.34 - 0.03 * settle, -0.02];
     P.rot.hips = [0.42, 0, 0.02];
     P.rot.spine = [0.22, 0, 0]; P.rot.chest = [0.14, 0, 0]; P.rot.upperChest = [0.1, 0, 0];
-    for (const [L, s] of [['L', 1], ['R', -1]]) {
-      const lift = this.reached ? 0.25 : 0;
-      P.rot['clavicle' + L] = [0, 0, s * (0.14 + lift * 0.3)];
-      P.rot['upperArm' + L] = [-0.62 - lift, 0, s * 0.2];
-      P.rot['forearm' + L] = [-0.8 + lift * 0.4, 0, 0];
-      P.rot['hand' + L] = [0.45, 0, -s * 0.2];
-    }
-    P.open = 1.1; P.rate = 2.2; P.armRate = 1.6;
+    P.open = 1.1; P.rate = 2.2;
+    stalkArms(a, P, this.reached ? 0.25 : 0);
     P.gaze = 'player'; P.lookFreq = 0.45;
     P.jaw = this.reached ? 0.35 : 0.12; P.breathe = 0.6;
   }
@@ -880,6 +935,28 @@ class Attack {
   }
 }
 
+// Stalking arms: they are never idle and never swing. As one foot steps, the opposite arm reaches
+// slowly out ahead of the body, fingers spreading; it holds there after the foot lands, then draws
+// back in with the fingers closing, one arm at a time, like something feeling its way toward you.
+function stalkArms(a, P, raise = 0) {
+  const dt = a.dt, G = a.gait.limbs;
+  for (const [L, s, foot] of [['L', 1, 'R'], ['R', -1, 'L']]) {
+    const F = G[foot];
+    const out = F.stepping || (F.planted ?? 9) < 0.7;
+    a.reach[L] = damp(a.reach[L], out ? 1 : 0, out ? 2.4 : 1.1, dt);
+    const r = a.reach[L];
+    P.rot['clavicle' + L] = [-0.08 * r, 0, s * (0.12 + 0.1 * r + raise * 0.3)];
+    P.rot['upperArm' + L] = [-0.5 - 0.62 * r - raise, 0, s * (0.22 - 0.1 * r)];
+    P.rot['forearm' + L] = [-1.0 + 0.62 * r + raise * 0.4, 0, 0];
+    P.rot['hand' + L] = [0.55 - 0.45 * r, 0, -s * (0.22 - 0.1 * r)];
+    if (!P.openH) P.openH = {};
+    P.openH[L] = 0.35 + 1.0 * r;
+  }
+  const tw = a.reach.R - a.reach.L;
+  P.rot.upperChest = [(P.rot.upperChest?.[0] ?? 0.1), 0.07 * tw, 0.03 * tw];
+  P.armRate = 4.5;
+}
+
 // ------------------------------------------------------------------ path following (used by the hunter AI)
 function stalkPose(a, P) {
   P.gait = GAITS.stalk;
@@ -887,11 +964,8 @@ function stalkPose(a, P) {
   P.hips = [0, -0.32 - 0.015 * Math.abs(Math.cos(ph)), -0.02];
   P.rot.hips = [0.42, 0.03 * Math.sin(ph), 0.02];
   P.rot.spine = [0.22, 0, 0]; P.rot.chest = [0.14, 0, 0]; P.rot.upperChest = [0.1, 0, 0];
-  for (const [L, s] of [['L', 1], ['R', -1]]) {
-    P.rot['clavicle' + L] = [0, 0, s * 0.14];
-    P.rot['upperArm' + L] = [-0.62, 0, s * 0.2]; P.rot['forearm' + L] = [-0.8, 0, 0]; P.rot['hand' + L] = [0.45, 0, -s * 0.2];
-  }
-  P.open = 1.1; P.rate = 2.4; P.armRate = 1.8; P.breathe = 0.6;
+  P.open = 1.1; P.rate = 2.4; P.breathe = 0.6;
+  stalkArms(a, P);
 }
 function runPose(a, P) {
   P.gait = GAITS.run;
@@ -916,7 +990,10 @@ class Follow {
     this.t += dt;
     if (this.i < pts.length) {
       const p = pts[this.i], last = this.i === pts.length - 1;
-      const ramp = mode === 'run' ? Math.min(1, 0.35 + this.t * 1.2) : 1;
+      let ramp = mode === 'run' ? Math.min(1, 0.35 + this.t * 1.2) : 1;
+      if (mode === 'crawl' && !(o.speed > 1.15)) {
+        const G = a.gait.limbs; a.surge = damp(a.surge, G.L.stepping || G.R.stepping ? 1.4 : 0.55, 7, dt); ramp *= a.surge;
+      }
       const d = a.moveToward(p.x, p.z, (o.speed ?? SPEEDS[mode]) * ramp, dt, mode === 'run' ? 3.0 : 1.7, last ? (o.stopAt || 0) : 0);
       if (d < (last ? (o.stopAt || 0) + 0.12 : 0.5)) this.i++;
     } else if (!this.arrived) { this.arrived = true; o.onArrive?.(); }

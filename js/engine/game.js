@@ -83,7 +83,7 @@ export class Game {
     this.time = 0; this.paused = false;
     this.timeScale = params.has('ts') ? parseFloat(params.get('ts')) : 1; // debug: speed up the clock
     this.skipRender = params.has('norender'); // debug: run logic only (automated playthroughs)
-    this.level = null; this.fear = 0;
+    this.level = null; this.fear = 0; this.expo = 0;
     addEventListener('resize', () => this.resize());
     this.audioStarted = false;
     // Web Audio may only start from a user gesture: try on every gesture until the engine is up
@@ -158,7 +158,7 @@ export class Game {
     this.post?.dispose?.();
     this.post = createPost(this.renderer, this.scene, this.camera, { quality: settings.quality, ao: !params.has('noao') });
     this.post.setSize(innerWidth, innerHeight, this.pixelRatio);
-    this.ui.objective(null); this.ui.lampMeter(false);
+    this.ui.objective(null); this.ui.lampMeter(false); this.expo = 0;
     this.level = await levelFn(this, opts);
     this.post.setLook(this.level.look || 'horror');
     this.playing = true;
@@ -186,7 +186,7 @@ export class Game {
       sfx.update(dt);
     }
     this.ui.update(dt);
-    if (!this.skipRender) this.post.render(this.time, this.fear);
+    if (!this.skipRender) this.post.render(this.time, this.fear, this.expo);
     this.input.endFrame();
   }
 

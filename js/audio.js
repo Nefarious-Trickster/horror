@@ -869,7 +869,7 @@ export class AudioEngine {
 
   // -------------------------------------------------------------- ambience
   setAmbience(name, level = 1, fade = 2) {
-    if (!['lab', 'labDark', 'construction', 'flooded', 'none'].includes(name)) name = 'none';
+    if (!['lab', 'labDark', 'construction', 'flooded', 'mine', 'purge', 'none'].includes(name)) name = 'none';
     this._state.amb = name === 'none' ? null : { name, level, fade };
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
@@ -888,6 +888,8 @@ export class AudioEngine {
     if (name === 'lab') this._bedLab(bed, t);
     else if (name === 'labDark') this._bedLabDark(bed, t);
     else if (name === 'flooded') this._bedFlooded(bed, t);
+    else if (name === 'mine') this._bedMine(bed, t);
+    else if (name === 'purge') this._bedPurge(bed, t);
     else this._bedConstruction(bed, t);
     v.out.gain.setValueAtTime(0, now);
     v.out.gain.setTargetAtTime(level, now, tc);
@@ -2690,6 +2692,182 @@ export class AudioEngine {
     return h;
   }
 
+  // Long-running sources with an intensity: 'fan' (a huge ventilation fan), 'gas' (a vent hissing),
+  // 'cage' (a mine cage hoisting: motor, rope, rattle), 'mask' (your own breathing in a respirator).
+  // Returns a handle: set(level 0..1), stop(), setPosition(p)
+  loop(kind, pos, level = 1) {
+    const eng = this;
+    const h = {
+      pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : null, level: clamp(+level || 0, 0, 1), v: null, stopped: false, kind,
+      get active() { return !h.stopped; },
+      _build() {
+        if (h.v || h.stopped || !eng.ctx) return;
+        const t = eng.ctx.currentTime + 0.02;
+        const v = h.v = new Voice(eng, 'loop', { pos: h.pos, bus: h.pos ? undefined : 'ui', gain: 0, loop: true, send: kind === 'mask' ? 0.02 : 0.35 });
+        if (kind === 'fan') {
+          const r = v.noise('brownSt', t), rl = v.filter('lowpass', 180, 0.8), rg = v.gain(0.5);
+          v.chain(r, rl, rg, v.out);
+          const a = v.noise('pinkSt', t), ab = v.filter('bandpass', 420, 0.7), am = v.gain(0.5), ag = v.gain(0.16);
+          const bl = v.osc('sine', 11, t), blg = v.gain(0.45); bl.connect(blg); blg.connect(am.gain); // blade pass
+          v.chain(a, ab, am, ag, v.out);
+          const hum = v.osc('sawtooth', 50, t), hl = v.filter('lowpass', 220, 2), hg = v.gain(0.05);
+          v.chain(hum, hl, hg, v.out);
+          h.parts = { bl, hum, rl };
+        } else if (kind === 'gas') {
+          const n = v.noise('white', t), hp = v.filter('highpass', 1500, 0.6), pk = v.filter('peaking', 4200, 1.5, 6), g = v.gain(0.22);
+          v.chain(n, hp, pk, g, v.out);
+          const l = v.noise('pinkSt', t), lb = v.filter('bandpass', 600, 0.7), lg = v.gain(0.08);
+          v.chain(l, lb, lg, v.out);
+          const sp = v.osc('sine', 0.3, t), spg = v.gain(0.06); sp.connect(spg); spg.connect(g.gain);
+        } else if (kind === 'cage') {
+          const m = v.osc('sawtooth', 62, t), ml = v.filter('lowpass', 500, 1.2), mg = v.gain(0.12);
+          v.chain(m, ml, mg, v.out);
+          const rope = v.noise('pinkSt', t), rb = v.filter('bandpass', 1300, 1.2), rg = v.gain(0.05);
+          v.chain(rope, rb, rg, v.out);
+          const rat = v.noise('white', t), rbp = v.filter('bandpass', 2600, 3), ram = v.gain(0), rag = v.gain(0.14);
+          const ro = v.osc('square', 13, t), rog = v.gain(0.5); ro.connect(rog); rog.connect(ram.gain);
+          v.chain(rat, rbp, ram, rag, v.out);
+          const thud = v.osc('sine', 1.3, t), thg = v.gain(0.08), th = v.osc('sine', 40, t), tam = v.gain(0);
+          thud.connect(thg); thg.connect(tam.gain); v.chain(th, tam, v.out);
+          h.parts = { m };
+        } else if (kind === 'mask') {
+          // valve click and rubber-muffled breath, about 16 a minute, faster when afraid
+          const n = v.noise('pink', t), bp = v.filter('bandpass', 900, 0.9), lp = v.filter('lowpass', 2200, 0.7), env = v.gain(0), g = v.gain(0.55);
+          v.chain(n, bp, lp, env, g, v.out);
+          h.parts = { env, bp };
+          let next = t + 0.3, inhale = true;
+          h.tick = eng._addTicker(next, (tt) => {
+            if (h.stopped) return null;
+            const rate = 0.75 + h.level * 0.9, D = (inhale ? 1.4 : 1.7) / rate;
+            const e = env.gain;
+            e.cancelScheduledValues(tt); e.setValueAtTime(0, tt);
+            e.linearRampToValueAtTime(inhale ? 0.55 : 0.8, tt + D * 0.25); e.linearRampToValueAtTime(inhale ? 0.4 : 0.3, tt + D * 0.7); e.linearRampToValueAtTime(0, tt + D);
+            bp.frequency.setValueAtTime(inhale ? 1200 : 700, tt); bp.frequency.linearRampToValueAtTime(inhale ? 1700 : 500, tt + D);
+            const c = v.osc('square', inhale ? 1800 : 1200, tt + (inhale ? 0 : D * 0.05), tt + 0.02 + (inhale ? 0 : D * 0.05)), cg = v.gain(0.02);
+            v.chain(c, cg, v.out);
+            inhale = !inhale;
+            return tt + D + (inhale ? rand(0.2, 0.6) / rate : 0.08);
+          });
+        }
+        v.out.gain.setValueAtTime(0, t);
+        h._apply(t, 1.2);
+      },
+      _apply(t, tc) {
+        if (!h.v) return;
+        const L = h.level;
+        h.v.out.gain.cancelScheduledValues(t);
+        h.v.out.gain.setTargetAtTime(kind === 'mask' ? (L > 0 ? 0.5 : 0) : L, t, tc);
+        if (h.parts?.bl) { h.parts.bl.frequency.setTargetAtTime(2 + 9 * L, t, tc * 2); h.parts.hum.frequency.setTargetAtTime(20 + 30 * L, t, tc * 2); h.parts.rl.frequency.setTargetAtTime(90 + 120 * L, t, tc); }
+        if (h.parts?.m) h.parts.m.frequency.setTargetAtTime(30 + 34 * L, t, tc);
+      },
+      set(l, tc = 0.8) { h.level = clamp(+l || 0, 0, 1); if (h.v) h._apply(eng.ctx.currentTime, tc); },
+      stop(fade = 0.6) { if (h.stopped) return; h.stopped = true; eng._loops.delete(h); if (h.tick) eng._tickers.delete(h.tick); if (h.v) { h.v.kill(fade); eng.voices.push(h.v); } },
+      setPosition(p) { if (p) { h.pos = { x: p.x, y: p.y, z: p.z }; if (h.v) h.v.setPosition(h.pos); } },
+    };
+    this._loops.add(h);
+    if (this.ctx) h._build();
+    return h;
+  }
+
+  // breath shaped into words you can't make out, very close. pos null = inside your head
+  whisper(pos, { dur = 1.6, level = 0.6 } = {}) {
+    const t = this._now(), D = clamp(+dur || 1.6, 0.4, 5);
+    const v = this._voice('whisper', { t, pos, bus: pos ? undefined : 'ui', gain: 0.5 * clamp(+level || 0.6, 0, 1.5), send: 0.25, pan: pos ? undefined : rand(-0.8, 0.8) });
+    const n = v.noise('pink', t, t + D + 0.1), hp = v.filter('highpass', 700, 0.7), env = v.gain(0);
+    const f1 = v.filter('bandpass', 700, 6), f2 = v.filter('bandpass', 1500, 8), f3 = v.filter('bandpass', 2900, 9), mix = v.gain(1.6);
+    v.chain(n, hp, env); env.connect(f1); env.connect(f2); env.connect(f3); f1.connect(mix); f2.connect(mix); f3.connect(mix); mix.connect(v.out);
+    let s = t;
+    const vowels = [[300, 2300, 3000], [700, 1200, 2600], [500, 900, 2400], [400, 1900, 2600], [650, 1700, 2700]];
+    while (s < t + D) { // syllables
+      const L = rand(0.12, 0.3), [a, b, c] = pick(vowels);
+      f1.frequency.setTargetAtTime(a, s, 0.03); f2.frequency.setTargetAtTime(b, s, 0.03); f3.frequency.setTargetAtTime(c, s, 0.03);
+      env.gain.setTargetAtTime(rand(0.5, 1), s, 0.02); env.gain.setTargetAtTime(chance(0.3) ? 0.05 : 0.25, s + L * 0.7, 0.03);
+      s += L + (chance(0.2) ? rand(0.1, 0.3) : 0);
+    }
+    env.gain.setTargetAtTime(0, t + D, 0.05);
+    const sib = v.noise('white', t, t + D), shp = v.filter('highpass', 5000, 0.7), sg = v.gain(0);
+    for (let k = 0; k < 3; k++) { const st = t + rand(0, D); perc(sg.gain, st, 0.12, 0.12, 0.02); }
+    v.chain(sib, shp, sg, v.out);
+    v.until(t + D + 0.3);
+  }
+
+  // stone letting go: a crack, then rubble pouring
+  rockfall(pos, size = 1) {
+    const t = this._now(), s = clamp(+size || 1, 0.2, 3), D = 0.8 + s * 1.2;
+    const v = this._voice('rock', { t, pos, gain: 0.8 * Math.sqrt(s), send: 0.6 });
+    const cr = v.noise('white', t, t + 0.08), cb = v.filter('bandpass', 1800, 0.8), cg = v.gain(0);
+    perc(cg.gain, t, 0.9, 0.05, 0.001); v.chain(cr, cb, cg, v.out);
+    const b = v.osc('sine', 55, t, t + 0.6), bg = v.gain(0); b.frequency.exponentialRampToValueAtTime(32, t + 0.4); perc(bg.gain, t, 0.8 * s, 0.4, 0.003); v.chain(b, bg, v.out);
+    const r = v.noise('brown', t + 0.05, t + D), rl = v.filter('lowpass', 900, 0.6), rg = v.gain(0);
+    pts(rg.gain, t + 0.05, [[0, 0], [0.1, 0.7], [D * 0.6, 0.4], [D - 0.05, 0]]); v.chain(r, rl, rg, v.out);
+    for (let i = 0; i < 10 * s; i++) { const st = t + rand(0.05, D), f = rand(400, 1600); v.modes(st, [f, f * 2.3], [0.05, 0.03], [0.12, 0.05], v.out); }
+    v.until(t + D + 0.3);
+  }
+
+  // knuckles (or something harder) on sheet metal: n knocks, evenly, deliberately
+  knock(pos, { n = 3, gap = 0.55, hard = 0.7 } = {}) {
+    const t = this._now(), N = clamp(n | 0, 1, 12);
+    const v = this._voice('knock', { t, pos, gain: 0.7 * clamp(+hard || 0.7, 0.1, 1.5), send: 0.45 });
+    const f = rand(140, 220);
+    for (let i = 0; i < N; i++) {
+      const st = t + i * gap * rand(0.97, 1.03);
+      v.modes(st, [f, f * 1.7, f * 2.6, f * 3.9], [0.35, 0.25, 0.15, 0.1], [0.7, 0.4, 0.25, 0.12], v.out);
+      const nn = v.noise('white', st, st + 0.03), nb = v.filter('bandpass', 1400, 1), ng = v.gain(0);
+      perc(ng.gain, st, 0.5, 0.012, 0.001); v.chain(nn, nb, ng, v.out);
+    }
+    v.until(t + N * gap + 1);
+  }
+
+  // the old workings: deep, close stone; drips in pools; rock ticking as it settles; air moving in far shafts
+  _bedMine(bed, t) {
+    const v = bed.v, o = v.out;
+    const room = v.noise('brownSt', t), rl = v.filter('lowpass', 70, 0.7), rg = v.gain(0.16);
+    v.chain(room, rl, rg, o);
+    const air = v.noise('pinkSt', t), ab = v.filter('bandpass', 260, 0.6), ag = v.gain(0.025);
+    v.chain(air, ab, ag, o);
+    const moan = v.noise('pinkSt', t), mb = v.filter('bandpass', 180, 12), mg = v.gain(0);
+    v.chain(moan, mb, mg, o);
+    this._bedTicker(bed, t + 3, (tt) => { const on = chance(0.4); mg.gain.setTargetAtTime(on ? rand(0.05, 0.12) : 0, tt, 3); mb.frequency.setTargetAtTime(rand(120, 260), tt, 4); return tt + rand(6, 16); });
+    for (let k = 0; k < 3; k++) {
+      const period = rand(1.4, 4.5), pan = rand(-0.9, 0.9), f = rand(500, 1300), lvl = rand(0.04, 0.09);
+      this._bedTicker(bed, t + rand(0.5, 4), (tt) => { this._drip(tt, pan, f * rand(0.95, 1.05), lvl * rand(0.6, 1.1), chance(0.7)); return tt + period * rand(0.85, 1.2); });
+    }
+    this._bedTicker(bed, t + rand(2, 6), (tt) => { const n = chance(0.3) ? irand(2, 4) : 1; for (let i = 0; i < n; i++) this._ambTink(tt + i * rand(0.1, 0.4), rand(-1, 1), rand(0.015, 0.035), false); return tt + rand(4, 13); });
+    this._bedTicker(bed, t + rand(10, 25), (tt) => { if (chance(0.6)) this._ambThud(tt, rand(-1, 1), rand(0.05, 0.12)); else this._ambCreak(tt, rand(-1, 1), rand(0.05, 0.1), 'wood', true); return tt + rand(14, 40); });
+  }
+
+  // the purge: every fan in the site running at once, a klaxon somewhere far, gas in the ducts
+  _bedPurge(bed, t) {
+    const v = bed.v, o = v.out;
+    const r = v.noise('brownSt', t), rl = v.filter('lowpass', 140, 0.7), rg = v.gain(0.22);
+    v.chain(r, rl, rg, o);
+    const d = v.noise('pinkSt', t), db = v.filter('bandpass', 520, 0.5), dg = v.gain(0.05);
+    v.chain(d, db, dg, o);
+    const hiss = v.noise('pinkSt', t), hh = v.filter('highpass', 3500, 0.6), hg = v.gain(0.012);
+    v.chain(hiss, hh, hg, o);
+    this._bedTicker(bed, t + rand(2, 5), (tt) => {
+      const vv = this._voice('amb', { t: tt, bus: 'amb', pan: rand(-1, 1), gain: 0.02, send: 0.95 });
+      const f = 520; for (let i = 0; i < 3; i++) { const st = tt + i * 0.9, ko = vv.osc('square', f, st, st + 0.6), kl = vv.filter('lowpass', 1200, 0.7), kg = vv.gain(0); pts(kg.gain, st, [[0, 0], [0.05, 1], [0.5, 1], [0.6, 0]]); ko.frequency.setValueAtTime(f, st); ko.frequency.linearRampToValueAtTime(f * 0.8, st + 0.6); vv.chain(ko, kl, kg, vv.out); }
+      vv.until(tt + 3);
+      return tt + rand(9, 18);
+    });
+    this._bedTicker(bed, t + rand(4, 9), (tt) => { if (chance(0.6)) this._ambCreak(tt, rand(-1, 1), rand(0.06, 0.12), 'metal', true); else this._ambClank(tt, rand(-1, 1), rand(0.05, 0.1)); return tt + rand(6, 15); });
+  }
+
+  // an old electromechanical phone bell: two strikes-trains, the second shorter
+  phoneRing(pos) {
+    const t = this._now();
+    const v = this._voice('ring', { t, pos, gain: 0.5, send: 0.5 });
+    const f = 1150;
+    for (const [s0, D] of [[0, 0.9], [1.25, 0.9]]) {
+      for (let k = 0; k < D * 20; k++) {
+        const st = t + s0 + k / 20;
+        v.modes(st, [f, f * 1.48, f * 2.71, f * 0.51], [0.25, 0.18, 0.1, 0.3], [0.3, 0.2, 0.1, 0.15], v.out);
+      }
+    }
+    v.until(t + 2.6);
+  }
+
   // flooded sublevel bed: lapping water, drips into deep water, distant pipe groans, a far-off rush
   _bedFlooded(bed, t) {
     const v = bed.v, o = v.out;
@@ -2735,8 +2913,8 @@ export class AudioEngine {
 const ONE_SHOTS = ['stinger', 'pa', 'radio', 'beep', 'powerDown', 'powerUp', 'doorSlide', 'doorBang', 'doorSmash',
   'glassKnock', 'glassCrack', 'glassShatter', 'metalImpact', 'debris', 'footstep', 'deconSpray', 'strobeCharge',
   'strobeFlash', 'creatureBreath', 'creatureClick', 'creatureCrack', 'creatureGrowl', 'creatureScream',
-  'creatureMove', 'creatureDrag', 'creatureSniff', 'splash', 'wade', 'valveHiss', 'pipeGroan'];
-const STATEFUL = ['setListener', 'setMasterVolume', 'setReverb', 'setAmbience', 'setTension', 'heartbeat', 'alarm', 'lightBuzz', 'pumpLoop', 'stopAll'];
+  'creatureMove', 'creatureDrag', 'creatureSniff', 'splash', 'wade', 'valveHiss', 'pipeGroan', 'whisper', 'rockfall', 'knock', 'phoneRing'];
+const STATEFUL = ['setListener', 'setMasterVolume', 'setReverb', 'setAmbience', 'setTension', 'heartbeat', 'alarm', 'lightBuzz', 'pumpLoop', 'loop', 'stopAll'];
 const FALLBACK = {
   radio: (a) => new Promise((r) => setTimeout(r, Math.max(0, +a[0] || 0) * 1000)),
   creatureBreath: () => NOOP_HANDLE, creatureGrowl: () => NOOP_HANDLE, creatureScream: () => NOOP_HANDLE,
@@ -2744,6 +2922,7 @@ const FALLBACK = {
   deconSpray: () => NOOP_HANDLE,
   strobeCharge: () => NOOP_HANDLE,
   lightBuzz: () => NOOP_HANDLE,
+  loop: () => NOOP_HANDLE,
   pumpLoop: () => NOOP_HANDLE,
 };
 for (const name of ONE_SHOTS) {

@@ -87,7 +87,7 @@ A records vault and the old tiered observation theatre where C-14A was first stu
 - **Choice: the files.** **Upload** them to the external relay (the truth gets out) or **burn** them as ordered.
 - **First non-hostile encounter:** B finds you in the archive and does not attack. It stands at the end of the stacks and leaves something on the floor before it goes: Lind's ID badge.
 
-### Chapter 4: The Nest
+### Chapter 4: The Nest (built)
 
 The 2019 containment chamber, deep in the old mine. B has made a nest out of lab coats, office chairs and photographs: a crude, wrong copy of Lind's office. Some of the missing staff are here.
 
@@ -99,7 +99,7 @@ The 2019 containment chamber, deep in the old mine. B has made a nest out of lab
   - **LANTERN-0:** only available if you found every piece of Lind's trail. You recover the last vial.
 - **Exposure:** being clawed or caught here raises your exposure level (see below).
 
-### Chapter 5: Lights Out
+### Chapter 5: Lights Out (built)
 
 The purge begins. Power shuts down section by section, and gas creeps in under emergency lights. You climb back through the central core toward the surface lift while B, now desperate, hunts you through the dark. The final confrontation is at the lift shaft. Your earlier decisions and what you hold determine what you can do and what B does.
 
