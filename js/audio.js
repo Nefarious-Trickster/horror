@@ -869,7 +869,7 @@ export class AudioEngine {
 
   // -------------------------------------------------------------- ambience
   setAmbience(name, level = 1, fade = 2) {
-    if (!['lab', 'labDark', 'construction', 'none'].includes(name)) name = 'none';
+    if (!['lab', 'labDark', 'construction', 'flooded', 'none'].includes(name)) name = 'none';
     this._state.amb = name === 'none' ? null : { name, level, fade };
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
@@ -887,6 +887,7 @@ export class AudioEngine {
     const t = now + 0.02;
     if (name === 'lab') this._bedLab(bed, t);
     else if (name === 'labDark') this._bedLabDark(bed, t);
+    else if (name === 'flooded') this._bedFlooded(bed, t);
     else this._bedConstruction(bed, t);
     v.out.gain.setValueAtTime(0, now);
     v.out.gain.setTargetAtTime(level, now, tc);
@@ -2578,6 +2579,140 @@ export class AudioEngine {
     return this._handle(v);
   }
 
+  // ------------------------------------------------------------- water (Chapter Two)
+  // something heavy moving through or dropping into knee-deep water. size 0.2 (a hand) .. 2 (a body)
+  splash(pos, size = 1) {
+    const s = clamp(+size || 1, 0.1, 3);
+    const t = this._now();
+    const D = 0.35 + 0.5 * s;
+    const v = this._voice('splash', { t, pos, gain: 0.9 * Math.pow(s, 0.5), send: 0.4 });
+    const n = v.noise('white', t, t + D + 0.2), bp = v.filter('bandpass', rand(900, 1600) / Math.pow(s, 0.3), 0.5), g = v.gain(0);
+    pts(g.gain, t, [[0, 0], [0.01, 0.9], [0.08 * s + 0.04, 0.55], [D, 0]]);
+    v.chain(n, bp, g, v.out);
+    const lo = v.noise('brown', t, t + D + 0.2), lol = v.filter('lowpass', 380, 0.8), log = v.gain(0);
+    pts(log.gain, t, [[0, 0], [0.02, 0.8 * s], [D * 0.8, 0]]);
+    v.chain(lo, lol, log, v.out);
+    const nb = Math.round(irand(4, 9) * Math.sqrt(s));
+    for (let i = 0; i < nb; i++) { // droplets falling back
+      const st = t + rand(0.08, D), bf = rand(700, 2200), bo = v.osc('sine', bf, st, st + 0.07), bg = v.gain(0);
+      bo.frequency.setValueAtTime(bf, st); bo.frequency.exponentialRampToValueAtTime(bf * rand(1.4, 2.3), st + 0.04);
+      perc(bg.gain, st, rand(0.05, 0.16), 0.04, 0.002);
+      v.chain(bo, bg, v.out);
+    }
+    v.until(t + D + 0.3);
+  }
+
+  // a long body pushing through water: a slow wash with a bow-wave hiss
+  wade(pos, { speed = 0.5, dur = 0.9 } = {}) {
+    const t = this._now(), sp = clamp(+speed || 0.5, 0, 1), D = clamp(+dur || 0.9, 0.2, 3);
+    const v = this._voice('wade', { t, pos, gain: 0.5 + 0.6 * sp, send: 0.35 });
+    const n = v.noise('pink', t, t + D + 0.1), bp = v.filter('bandpass', 500 + 700 * sp, 0.6), g = v.gain(0);
+    pts(g.gain, t, [[0, 0], [D * 0.3, 0.7], [D * 0.75, 0.5], [D, 0]]);
+    v.chain(n, bp, g, v.out);
+    const h = v.noise('white', t, t + D + 0.1), hp = v.filter('highpass', 3000, 0.7), hg = v.gain(0);
+    pts(hg.gain, t, [[0, 0], [D * 0.4, 0.12 * sp], [D, 0]]);
+    v.chain(h, hp, hg, v.out);
+    const nb = irand(1, 4);
+    for (let i = 0; i < nb; i++) {
+      const st = t + rand(0, D), bf = rand(250, 600), bo = v.osc('sine', bf, st, st + 0.12), bg = v.gain(0);
+      bo.frequency.setValueAtTime(bf, st); bo.frequency.exponentialRampToValueAtTime(bf * 1.8, st + 0.08);
+      perc(bg.gain, st, 0.2, 0.08, 0.004);
+      v.chain(bo, bg, v.out);
+    }
+    v.until(t + D + 0.2);
+  }
+
+  // pressure escaping from a valve or a bleed screw. dur in seconds; strength 0..1
+  valveHiss(pos, { dur = 1.2, strength = 0.7 } = {}) {
+    const t = this._now(), D = clamp(+dur || 1.2, 0.1, 6), k = clamp(+strength || 0.7, 0.05, 1);
+    const v = this._voice('hiss', { t, pos, gain: 0.7 * k, send: 0.3 });
+    const n = v.noise('white', t, t + D + 0.2), hp = v.filter('highpass', 1800, 0.7), pk = v.filter('peaking', rand(3500, 6000), 2, 8), g = v.gain(0);
+    pts(g.gain, t, [[0, 0], [0.03, 0.6], [D * 0.8, 0.45], [D, 0]]);
+    v.chain(n, hp, pk, g, v.out);
+    const wh = v.osc('sine', rand(900, 1400), t, t + D), whg = v.gain(0);
+    wh.frequency.linearRampToValueAtTime(rand(600, 900), t + D);
+    pts(whg.gain, t, [[0, 0], [0.1, 0.03 * k], [D, 0]]);
+    v.chain(wh, whg, v.out);
+    v.until(t + D + 0.3);
+  }
+
+  // a long pipe flexing under pressure: low metallic groan with a creak on top
+  pipeGroan(pos, { dur = 2.2, depth = 1 } = {}) {
+    const t = this._now(), D = clamp(+dur || 2.2, 0.4, 6);
+    const v = this._voice('groan', { t, pos, gain: 0.8 * clamp(+depth || 1, 0.2, 2), send: 0.6 });
+    const f = rand(48, 75), o = v.osc('sawtooth', f, t, t + D + 0.1), lp = v.filter('lowpass', 260, 4), g = v.gain(0);
+    o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * rand(0.8, 1.25), t + D);
+    pts(g.gain, t, [[0, 0], [D * 0.25, 0.35], [D * 0.6, 0.25], [D, 0]]);
+    v.chain(o, lp, g, v.out);
+    const cf = rand(180, 320), cr = v.osc('square', cf, t + D * 0.2, t + D), crb = v.filter('bandpass', cf * 3, 6), crg = v.gain(0), am = v.osc('square', rand(9, 18), t, t + D), amg = v.gain(0.5);
+    am.connect(amg); amg.connect(crg.gain);
+    pts(crg.gain, t + D * 0.2, [[0, 0], [D * 0.2, 0.05], [D * 0.6, 0]]);
+    v.chain(cr, crb, crg, v.out);
+    v.until(t + D + 0.3);
+  }
+
+  // a running pump: motor whine, impeller thrum, water rushing. Returns a handle: set(on), stop()
+  pumpLoop(pos, on = true) {
+    const eng = this;
+    const h = {
+      pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : null, on: !!on, v: null, stopped: false,
+      get active() { return !h.stopped; },
+      _build() {
+        if (h.v || h.stopped || !eng.ctx) return;
+        const t = eng.ctx.currentTime + 0.02;
+        const v = h.v = new Voice(eng, 'loop', { pos: h.pos, gain: 0, loop: true, send: 0.3 });
+        const m = v.osc('sawtooth', 98, t), ml = v.filter('lowpass', 600, 1.5), mg = v.gain(0.06);
+        v.chain(m, ml, mg, v.out);
+        const w = v.osc('sine', 392, t), wg = v.gain(0.012);
+        v.chain(w, wg, v.out);
+        const thr = v.osc('sine', 24, t), thg = v.gain(0.18), am = v.gain(0.6), lfo = v.osc('sine', 6, t), lfg = v.gain(0.4);
+        lfo.connect(lfg); lfg.connect(am.gain);
+        v.chain(thr, am, thg, v.out);
+        const r = v.noise('pinkSt', t), rb = v.filter('bandpass', 700, 0.5), rg = v.gain(0.05);
+        v.chain(r, rb, rg, v.out);
+        h.parts = { m, w };
+        v.out.gain.setValueAtTime(0, t);
+        if (h.on) h._spin(t, true);
+      },
+      _spin(t, up) {
+        const { m, w } = h.parts;
+        h.v.out.gain.cancelScheduledValues(t);
+        h.v.out.gain.setTargetAtTime(up ? 1 : 0, t, up ? 0.8 : 1.2);
+        for (const [o, f] of [[m, 98], [w, 392]]) { o.frequency.cancelScheduledValues(t); o.frequency.setValueAtTime(up ? f * 0.3 : f, t); o.frequency.setTargetAtTime(up ? f : f * 0.25, t, up ? 1.0 : 1.4); }
+      },
+      set(v) { h.on = !!v; if (h.v) h._spin(eng.ctx.currentTime, h.on); },
+      setOn(v) { h.set(v); },
+      stop(fade = 0.5) { if (h.stopped) return; h.stopped = true; eng._loops.delete(h); if (h.v) { h.v.kill(fade); eng.voices.push(h.v); } },
+      setPosition(p) { if (p) { h.pos = { x: p.x, y: p.y, z: p.z }; if (h.v) h.v.setPosition(h.pos); } },
+    };
+    this._loops.add(h);
+    if (this.ctx) h._build();
+    return h;
+  }
+
+  // flooded sublevel bed: lapping water, drips into deep water, distant pipe groans, a far-off rush
+  _bedFlooded(bed, t) {
+    const v = bed.v, o = v.out;
+    const lap = v.noise('pinkSt', t), lapl = v.filter('lowpass', 420, 0.8), lapAm = v.gain(0.5), lapg = v.gain(0.09);
+    const lfo = v.osc('sine', 0.37, t), lfg = v.gain(0.35);
+    lfo.connect(lfg); lfg.connect(lapAm.gain);
+    v.chain(lap, lapl, lapAm, lapg, o);
+    const room = v.noise('brownSt', t), rl = v.filter('lowpass', 120, 0.7), rg = v.gain(0.12);
+    v.chain(room, rl, rg, o);
+    const rush = v.noise('pinkSt', t), rbp = v.filter('bandpass', 900, 0.6), rug = v.gain(0.0);
+    v.chain(rush, rbp, rug, o);
+    this._bedTicker(bed, t + 2, (tt) => { rug.gain.setTargetAtTime(chance(0.5) ? rand(0.004, 0.02) : 0, tt, 2.5); return tt + rand(5, 14); });
+    for (let k = 0; k < 3; k++) {
+      const period = rand(0.9, 2.6), pan = rand(-0.9, 0.9), f = rand(350, 800), lvl = rand(0.05, 0.1);
+      this._bedTicker(bed, t + rand(0.3, 3), (tt) => { this._drip(tt, pan, f * rand(0.92, 1.08), lvl * rand(0.6, 1.1), true); return tt + period * rand(0.8, 1.2); });
+    }
+    this._bedTicker(bed, t + rand(6, 12), (tt) => {
+      if (chance(0.6)) this._ambCreak(tt, rand(-1, 1), rand(0.06, 0.12), 'metal', true);
+      else this._ambClank(tt, rand(-1, 1), rand(0.04, 0.09));
+      return tt + rand(9, 22);
+    });
+  }
+
   // Stop everything (e.g. on game over / pause menu).
   stopAll(fade = 0.3) {
     if (!this.ctx) return;
@@ -2600,8 +2735,8 @@ export class AudioEngine {
 const ONE_SHOTS = ['stinger', 'pa', 'radio', 'beep', 'powerDown', 'powerUp', 'doorSlide', 'doorBang', 'doorSmash',
   'glassKnock', 'glassCrack', 'glassShatter', 'metalImpact', 'debris', 'footstep', 'deconSpray', 'strobeCharge',
   'strobeFlash', 'creatureBreath', 'creatureClick', 'creatureCrack', 'creatureGrowl', 'creatureScream',
-  'creatureMove', 'creatureDrag', 'creatureSniff'];
-const STATEFUL = ['setListener', 'setMasterVolume', 'setReverb', 'setAmbience', 'setTension', 'heartbeat', 'alarm', 'lightBuzz', 'stopAll'];
+  'creatureMove', 'creatureDrag', 'creatureSniff', 'splash', 'wade', 'valveHiss', 'pipeGroan'];
+const STATEFUL = ['setListener', 'setMasterVolume', 'setReverb', 'setAmbience', 'setTension', 'heartbeat', 'alarm', 'lightBuzz', 'pumpLoop', 'stopAll'];
 const FALLBACK = {
   radio: (a) => new Promise((r) => setTimeout(r, Math.max(0, +a[0] || 0) * 1000)),
   creatureBreath: () => NOOP_HANDLE, creatureGrowl: () => NOOP_HANDLE, creatureScream: () => NOOP_HANDLE,
@@ -2609,6 +2744,7 @@ const FALLBACK = {
   deconSpray: () => NOOP_HANDLE,
   strobeCharge: () => NOOP_HANDLE,
   lightBuzz: () => NOOP_HANDLE,
+  pumpLoop: () => NOOP_HANDLE,
 };
 for (const name of ONE_SHOTS) {
   const fn = AudioEngine.prototype[name];

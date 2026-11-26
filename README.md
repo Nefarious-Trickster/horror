@@ -5,8 +5,9 @@ A first-person horror game in a private biocontainment facility. You work the C-
 **Built so far:**
 - **Prologue (Intake):** fully playable.
 - **Chapter One (The Build-Out):** fully playable, about 10 to 15 minutes. B is loose on an unfinished construction floor in the dark, and it hunts you. Find diesel, start the generator, close three zone breakers (it won't walk into the light), find Lind's lift key, then survive until the freight lift arrives. Hide in lockers, crouch to stay quiet, and flash it with the halide lamp when it gets close. Dying sends you back to your last checkpoint.
+- **Chapter Two (Pump Level):** fully playable. The freight lift lets you out onto a flooded service sublevel, knee-deep and dark. Start three drainage pumps in order (prime each one and close the bleed valve while the gauge needle is in the green; too late and the relief valve bangs). Every step splashes and B is in the water with you: you'll see its wake before its body. Sgt. Halloran is pinned in the cable gallery, and freeing him is loud. Save him or leave him; it's remembered.
 - **Creature study:** a room for watching the monster's animations.
-- **Chapters 2 to 5:** in development.
+- **Chapters 3 to 5:** in development.
 
 ## Run it
 
@@ -14,7 +15,7 @@ A first-person horror game in a private biocontainment facility. You work the C-
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. Add `?level=chapter1` to jump straight to Chapter One. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
+Then open <http://localhost:8000>. Add `?level=chapter1` or `?level=chapter2` to jump straight to a chapter. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
 
 | Input | Action |
 | --- | --- |

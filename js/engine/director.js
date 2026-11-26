@@ -16,6 +16,8 @@ export class Director {
   until(test) { return new Promise((res, rej) => { if (this.cancelled) return rej(CANCEL); this.waiters.push({ test: () => { if (this.cancelled) { rej(CANCEL); return true; } return test(); }, res }); }); }
   wait(sec) { const end = this.t + sec; return this.until(() => this.t >= end); }
   every(fn) { this.tickers.add(fn); return () => this.tickers.delete(fn); }
+  // resolves on the next update with the game-time step since the call
+  frame() { const t0 = this.t; return this.until(() => this.t > t0).then(() => this.t - t0); }
   cancel() { this.cancelled = true; this.tickers.clear(); for (const w of this.waiters) w.test(); this.waiters = []; }
 }
 export const CANCEL = Symbol('cancelled');

@@ -570,8 +570,8 @@ export async function chapter1(game, opts = {}) {
     save.set('chapter', 2); save.set('ch1', null);
     save.set('truth', (save.get('truth', 0) || 0) + (CH.tape ? 1 : 0) + CH.docs.length);
     await say(OK, 'You\'re moving. You\'re in the car. Rook—it didn\'t follow. It went into the shaft. It\'s climbing down.', 6);
-    await ui.card('CHAPTER TWO', 'PUMP LEVEL<br><br>in development', 5);
-    location.href = location.pathname;
+    const { chapter2 } = await import('./chapter2.js');
+    await game.load(chapter2, {});
   }
   let liftDoors = 0, liftDoorsTarget = 0;
   function openLiftDoors(on) { liftDoorsTarget = on ? 1 : 0; sfx.doorSlide(lift.position, { heavy: true }); }
