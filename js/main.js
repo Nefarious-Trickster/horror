@@ -34,8 +34,12 @@ async function start(name, opts) {
   window.__ready = true;
 }
 for (const b of document.querySelectorAll('#menu [data-level]')) b.addEventListener('click', () => start(b.dataset.level));
-// the epilogue button appears once you have reached an ending
-try { const sv = JSON.parse(localStorage.getItem('the-tall-one/save/v1')) || {}; const eb = document.querySelector('#menu [data-level="epilogue"]'); if (eb) eb.hidden = !sv.ending; } catch { /* no storage */ }
+// while the game is being built, every epilogue can be picked from the menu
+const mainOpts = $('epilogueBtn').closest('.opts');
+const showPicker = (on) => { mainOpts.hidden = on; $('epiPick').hidden = !on; (on ? $('epiPick') : $('epilogueBtn')).querySelector?.('button')?.focus?.(); };
+$('epilogueBtn').addEventListener('click', () => { if ($('menu').classList.contains('ready')) showPicker(true); });
+$('epiBack').addEventListener('click', () => showPicker(false));
+for (const b of document.querySelectorAll('#epiPick [data-ending]')) b.addEventListener('click', () => { if ($('menu').classList.contains('ready')) start('epilogue', { ending: b.dataset.ending }); });
 $('settingsBtn').addEventListener('click', () => game.ui.openSettings(game.settings));
 
 // direct entry for testing: ?level=intro|test (&noui hides the menu instantly)
