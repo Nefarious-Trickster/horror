@@ -6,6 +6,16 @@ import { Interactions } from './interact.js';
 import { Director, CANCEL } from './director.js';
 import { setAnisotropy } from './assets.js';
 import { createPost } from '../post.js';
+import { settings } from './settings.js';
+import { staticBatch } from './batch.js';
+
+// resolution cap and shadow detail per quality tier
+const TIERS = {
+  low: { pr: 0.75, shadow: 1024, soft: false },
+  medium: { pr: 1.0, shadow: 1024, soft: true },
+  high: { pr: 1.25, shadow: 2048, soft: true },
+  ultra: { pr: 2.0, shadow: 4096, soft: true },
+};
 import { flashlightCookie } from '../room.js';
 
 const params = new URLSearchParams(location.search);
@@ -29,22 +39,31 @@ export class Game {
     this.params = params;
     this.isTouch = matchMedia('(pointer: coarse)').matches;
     if (this.isTouch) document.body.classList.add('touch');
-    const r = this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    this.pixelRatio = Math.min(devicePixelRatio, params.has('pr') ? parseFloat(params.get('pr')) : this.isTouch ? 1 : 1.5);
+    const r = this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
+    this.settings = settings;
+    if (params.has('q')) settings.quality = params.get('q'); // test override, not saved
+    this.tier = TIERS[settings.quality] || TIERS.high;
+    this.resScale = 1;
+    this.pixelRatio = this.targetPixelRatio();
     r.setPixelRatio(this.pixelRatio); r.setSize(innerWidth, innerHeight);
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.0;
-    r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.shadowMap.enabled = true; r.shadowMap.type = this.tier.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     setAnisotropy(Math.min(8, r.capabilities.getMaxAnisotropy()));
     r.domElement.classList.add('game');
     document.body.prepend(r.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.02, 80);
+    this.camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.02, 80);
     this.input = new Input(r.domElement);
     this.ui = new UI(); this.ui.bindTouch(this.input);
     if (params.has('noui')) this.ui.root.style.display = 'none';
     if (params.has('ts')) this.ui.ts = parseFloat(params.get('ts'));
     this.ui.onLine = (who, dur) => { if (who && who !== 'You') sfx.radio(dur, { speaker: who }); };
     this.player = new Player(this.camera);
+    this.applySettings();
+    settings.on((k) => this.applySettings(k));
+    this.frameMs = 16.7; this.resTimer = 0; this.fpsTimer = 0; this.fpsFrames = 0;
+    this.batch = staticBatch;
+    this.setupPause();
     this.player.onStep = (p, run) => sfx.footstep(undefined, this.surface || 'tile', { run, player: true });
     this.interact = new Interactions();
     this.cookie = flashlightCookie();
@@ -62,26 +81,75 @@ export class Game {
     requestAnimationFrame(this.loop);
   }
 
+  targetPixelRatio() {
+    const cap = params.has('pr') ? parseFloat(params.get('pr')) : Math.min(devicePixelRatio || 1, this.tier.pr);
+    return Math.max(0.5, cap * (settings.dynamicRes ? this.resScale : 1));
+  }
   resize() {
     this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix();
-    this.renderer.setSize(innerWidth, innerHeight);
+    this.pixelRatio = this.targetPixelRatio();
+    this.renderer.setPixelRatio(this.pixelRatio); this.renderer.setSize(innerWidth, innerHeight);
     this.post?.setSize(innerWidth, innerHeight, this.pixelRatio);
   }
+  applySettings(key) {
+    this.player.sens = 0.0022 * settings.sens;
+    this.player.invertY = settings.invertY;
+    this.camera.fov = settings.fov; this.camera.updateProjectionMatrix();
+    sfx.setMasterVolume(settings.volume);
+    if (!settings.showFps) this.ui?.fps(null);
+    if (key === 'quality') {
+      this.tier = TIERS[settings.quality] || TIERS.high;
+      this.renderer.shadowMap.type = this.tier.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+      if (this.scene) {
+        const look = this.post.look; this.post.dispose();
+        this.post = createPost(this.renderer, this.scene, this.camera, { quality: settings.quality, ao: !params.has('noao') });
+        this.post.setLook(look);
+        this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+        const fl = this.flashlight.light.shadow; fl.map?.dispose(); fl.map = null; fl.mapSize.set(this.tier.shadow, this.tier.shadow);
+      }
+      this.resScale = 1; this.resize();
+    }
+    if (key === 'dynamicRes') { this.resScale = 1; this.resize(); }
+  }
+  // Esc / losing the mouse pauses the game while a level is being played
+  setupPause() {
+    this.playing = false;
+    const open = () => {
+      if (!this.playing || this.paused || this.ui.docOpen || !this.input.enabled) return;
+      this.paused = true; this.input.unlock();
+      this.ui.showPause(true, {
+        resume: () => this.resume(),
+        settings: async () => { this.ui.showPause(false); await this.ui.openSettings(settings); this.ui.showPause(true, this._pauseHandlers); },
+        menu: () => { location.href = location.pathname; },
+      });
+      this._pauseHandlers = { resume: () => this.resume(), settings: async () => { this.ui.showPause(false); await this.ui.openSettings(settings); this.ui.showPause(true, this._pauseHandlers); }, menu: () => { location.href = location.pathname; } };
+    };
+    document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !this.input.isTouch) setTimeout(open, 60); });
+    addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape' && e.code !== 'KeyP') return;
+      if (this.ui.settingsOpen) return;
+      if (this.paused && this.ui.pauseOpen) this.resume(); else if (!this.input.locked) open();
+    });
+  }
+  resume() { this.ui.showPause(false); this.paused = false; this.clock.getDelta(); this.input.lock(); }
 
   // Build a fresh scene for a level. levelFn(game) -> { update(dt, t), dispose(), look }
   async load(levelFn, opts = {}) {
     if (this.level) { this.director.cancel(); this.level.dispose?.(); }
     this.interact.clear();
     this.scene = new THREE.Scene();
+    for (const c of [...this.camera.children]) this.camera.remove(c); // level viewmodels / lamp lights
     this.scene.add(this.camera);
     this.director = new Director();
     this.player.colliders = []; this.player.blockers = () => []; this.player.frozen = false; this.player.lookLocked = false; this.player.releaseLook();
-    this.flashlight = new Flashlight(this.scene, this.cookie, { shadowSize: this.isTouch ? 1024 : 2048 });
-    this.post = createPost(this.renderer, this.scene, this.camera, { ao: !params.has('noao') && !this.isTouch });
+    this.flashlight = new Flashlight(this.scene, this.cookie, { shadowSize: this.tier.shadow });
+    this.post?.dispose?.();
+    this.post = createPost(this.renderer, this.scene, this.camera, { quality: settings.quality, ao: !params.has('noao') });
     this.post.setSize(innerWidth, innerHeight, this.pixelRatio);
     this.ui.objective(null); this.ui.lampMeter(false);
     this.level = await levelFn(this, opts);
     this.post.setLook(this.level.look || 'horror');
+    this.playing = true;
     return this.level;
   }
 
@@ -90,8 +158,10 @@ export class Game {
 
   loop() {
     requestAnimationFrame(this.loop);
-    const dt = Math.min(this.clock.getDelta(), 0.05) * (this.timeScale ?? 1);
+    const raw = this.clock.getDelta();
+    const dt = Math.min(raw, 0.05) * (this.timeScale ?? 1);
     if (!this.scene) return;
+    this.trackPerformance(raw);
     if (!this.paused) {
       this.time += dt;
       const t = this.time;
@@ -106,5 +176,25 @@ export class Game {
     this.ui.update(dt);
     if (!this.skipRender) this.post.render(this.time, this.fear);
     this.input.endFrame();
+  }
+
+  // adaptive resolution: lower the render resolution when frames run long, raise it back
+  // slowly when there is headroom; plus the optional FPS readout
+  trackPerformance(raw) {
+    if (raw <= 0 || raw > 0.5) return;
+    this.frameMs += (raw * 1000 - this.frameMs) * 0.08;
+    this.fpsFrames++; this.fpsTimer += raw;
+    if (this.fpsTimer > 0.5) {
+      if (settings.showFps) this.ui.fps(`${Math.round(this.fpsFrames / this.fpsTimer)} FPS · ${Math.round(this.pixelRatio * 100)}% RES`);
+      this.fpsFrames = 0; this.fpsTimer = 0;
+    }
+    if (!settings.dynamicRes || this.paused || params.has('pr')) return;
+    this.resTimer += raw;
+    if (this.resTimer < 1.2) return;
+    this.resTimer = 0;
+    const prev = this.resScale;
+    if (this.frameMs > 19.5) this.resScale = Math.max(0.55, this.resScale * (this.frameMs > 28 ? 0.82 : 0.92));
+    else if (this.frameMs < 16.2 * 1.05 && this.resScale < 1) this.resScale = Math.min(1, this.resScale + 0.05);
+    if (Math.abs(prev - this.resScale) > 0.001) this.resize();
   }
 }

@@ -10,6 +10,7 @@ const params = game.params;
 
 const LEVELS = {
   intro: () => import('./levels/intro.js').then((m) => m.intro),
+  chapter1: () => import('./levels/chapter1.js').then((m) => m.chapter1),
   test: async () => testRoom,
 };
 
@@ -28,6 +29,7 @@ async function start(name, opts) {
   window.__ready = true;
 }
 for (const b of document.querySelectorAll('#menu [data-level]')) b.addEventListener('click', () => start(b.dataset.level));
+$('settingsBtn').addEventListener('click', () => game.ui.openSettings(game.settings));
 
 // direct entry for testing: ?level=intro|test (&noui hides the menu instantly)
 if (params.has('level') || params.has('act') || params.has('cam')) {

@@ -880,10 +880,62 @@ class Attack {
   }
 }
 
+// ------------------------------------------------------------------ path following (used by the hunter AI)
+function stalkPose(a, P) {
+  P.gait = GAITS.stalk;
+  const ph = a.gait.phase * TAU;
+  P.hips = [0, -0.32 - 0.015 * Math.abs(Math.cos(ph)), -0.02];
+  P.rot.hips = [0.42, 0.03 * Math.sin(ph), 0.02];
+  P.rot.spine = [0.22, 0, 0]; P.rot.chest = [0.14, 0, 0]; P.rot.upperChest = [0.1, 0, 0];
+  for (const [L, s] of [['L', 1], ['R', -1]]) {
+    P.rot['clavicle' + L] = [0, 0, s * 0.14];
+    P.rot['upperArm' + L] = [-0.62, 0, s * 0.2]; P.rot['forearm' + L] = [-0.8, 0, 0]; P.rot['hand' + L] = [0.45, 0, -s * 0.2];
+  }
+  P.open = 1.1; P.rate = 2.4; P.armRate = 1.8; P.breathe = 0.6;
+}
+function runPose(a, P) {
+  P.gait = GAITS.run;
+  const ph = a.gait.phase * TAU;
+  P.hips = [0, -0.2 - 0.035 * Math.abs(Math.cos(ph)), 0];
+  P.rot.hips = [0.32, 0.05 * Math.sin(ph), 0.02 * Math.sin(ph)];
+  P.rot.spine = [0.2, -0.04 * Math.sin(ph), 0]; P.rot.chest = [0.12, -0.04 * Math.sin(ph), 0]; P.rot.upperChest = [0.08, 0, 0];
+  for (const [L, s] of [['L', 1], ['R', -1]]) {
+    const f = a.footFwd[L === 'L' ? 'R' : 'L'];
+    P.rot['clavicle' + L] = [0, 0, s * 0.05];
+    P.rot['upperArm' + L] = [0.15 - f * 0.45, 0, s * 0.1]; P.rot['forearm' + L] = [-1.05 - f * 0.2, 0, 0]; P.rot['hand' + L] = [0.25, 0, 0];
+  }
+  P.rate = 7; P.armRate = 5; P.open = 0.5; P.jaw = 0.25;
+}
+const SPEEDS = { walk: 0.95, crawl: 0.85, stalk: 0.55, run: 3.3, creep: 0.4 };
+// Follows a list of points. opts: { path: [{x,z}], mode: 'walk'|'crawl'|'stalk'|'run'|'creep', speed, stopAt,
+// gaze: 'forward'|'player'|'wander', onArrive }
+class Follow {
+  constructor(a, o) { this.o = o; this.i = 0; this.arrived = false; this.t = 0; }
+  update(dt, a, P) {
+    const o = this.o, pts = o.path || [], mode = o.mode || 'walk';
+    this.t += dt;
+    if (this.i < pts.length) {
+      const p = pts[this.i], last = this.i === pts.length - 1;
+      const ramp = mode === 'run' ? Math.min(1, 0.35 + this.t * 1.2) : 1;
+      const d = a.moveToward(p.x, p.z, (o.speed ?? SPEEDS[mode]) * ramp, dt, mode === 'run' ? 3.0 : 1.7, last ? (o.stopAt || 0) : 0);
+      if (d < (last ? (o.stopAt || 0) + 0.12 : 0.5)) this.i++;
+    } else if (!this.arrived) { this.arrived = true; o.onArrive?.(); }
+    const moving = !this.arrived;
+    if (mode === 'crawl') crawlPose(a, P, a.gait.phase * TAU);
+    else if (mode === 'run' && moving) runPose(a, P);
+    else if (mode === 'stalk' || mode === 'creep') stalkPose(a, P);
+    else walkPose(a, P);
+    if (!moving && mode !== 'crawl' && mode !== 'stalk' && mode !== 'creep') { P.gait = GAITS.stand; armsHang(P, 0.1); P.rot.hips = [0.05, 0, 0.03]; P.hips = [0, 0, 0]; }
+    P.gaze = o.gaze || 'forward';
+    if (P.gaze === 'player') P.lookFreq = o.lookFreq ?? 0.8;
+  }
+}
+
 const ACTIONS = {
   idle: Idle, walk: Walk, stalk: Stalk, crawl: Crawl, chase: Chase, leap: Leap,
   lookAround: LookAround, breakDoor: BreakDoor, scream: Scream, convulse: Convulse, reset: Idle,
   faceWall: FaceWall, crouch: Crouch, goto: Goto, shield: Shield, recoil: Recoil, retreat: Retreat, attack: Attack,
+  follow: Follow,
 };
 export const ACTION_LIST = [
   ['idle', 'Idle', '1'], ['walk', 'Walk', '2'], ['stalk', 'Stalk', '3'], ['crawl', 'Crawl', '4'], ['chase', 'Chase', '5'],

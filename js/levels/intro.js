@@ -10,6 +10,7 @@ import { loadEnvironment } from '../engine/assets.js';
 import { loadCreatureModel, creatureBlockers, creatureCtx, applyDebugCamera } from './common.js';
 import { sfx } from '../engine/game.js';
 import { save } from '../save.js';
+import { addFloorReflection } from '../engine/reflect.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
@@ -317,6 +318,23 @@ export async function intro(game, opts = {}) {
     crackTex.needsUpdate = true;
   }
 
+  // ---------------------------------------------------------------- performance
+  // merge everything that never moves; moving or hideable things stay separate
+  for (const dr of Object.values(doors)) dr.leaf.userData.dynamic = true;
+  for (const b of beacons) b.obj.userData.dynamic = true;
+  for (const o of [lampOnRack, lampModel, kit, monitor, crack, mist]) o.userData.dynamic = true;
+  scene.updateMatrixWorld(true);
+  const ws1Screen = ws1.userData.screens?.[0]?.mesh ? ws1.userData.screens[0].mesh.getWorldPosition(V(0, 0, 0)) : V(-6.4, 1.2, 2.6);
+  // polished floors reflect (high/ultra quality)
+  if (['high', 'ultra'].includes(game.settings.quality)) addFloorReflection(scene, renderer, [lab.M.floor, lab.M.corridorFloor], { strength: 0.55, scale: game.settings.quality === 'ultra' ? 0.6 : 0.4 });
+  const batched = game.batch(scene);
+  console.info('static batching:', batched.before, '→', batched.after, 'meshes');
+  // fixed lights re-render their shadows a few times a second instead of every frame
+  const throttled = [[cellSpots.A, 2, 0], [cellSpots.B, 2, 1], [keySpot, 3, 0], [storageEmergency, 4, 2]];
+  for (const [l] of throttled) l.shadow.autoUpdate = false;
+  let shadowFrame = 0;
+  function updateShadows() { shadowFrame++; for (const [l, n, o] of throttled) if (l.intensity > 0 && shadowFrame % n === o) l.shadow.needsUpdate = true; }
+
   // ---------------------------------------------------------------- creatures
   const gltf = await loadCreatureModel((p) => game.onProgress?.(p));
   const cellWorld = (c) => ({ colliders: [], bounds: { min: V(c.x0 + 0.45, 0, c.z0 + 0.45), max: V(c.x1 - 0.45, 0, L.z0 - 0.4) } });
@@ -391,7 +409,7 @@ export async function intro(game, opts = {}) {
 
   // ---------------------------------------------------------------- interactions
   interact.add({ position: badge.position.clone().add(V(0, 0, 0.05)), label: 'Badge in', enabled: () => S.stage === 'badge', onUse: () => { badge.userData.setState?.('ok'); sfx.beep('ok'); S.badged = true; } });
-  interact.add({ position: () => ws1.userData.screens?.[0]?.mesh ? ws1.userData.screens[0].mesh.getWorldPosition(V(0, 0, 0)) : V(-6.4, 1.2, 2.6), label: 'Log in · overnight notes', reach: 2.2, size: 0.5, enabled: () => S.stage === 'login', onUse: async () => { sfx.beep('terminal'); await ui.readDoc(DOSSIER, game.input); S.readNotes = true; } });
+  interact.add({ position: ws1Screen, label: 'Log in · overnight notes', reach: 2.2, size: 0.5, enabled: () => S.stage === 'login', onUse: async () => { sfx.beep('terminal'); await ui.readDoc(DOSSIER, game.input); S.readNotes = true; } });
   interact.add({ position: V(0, 1.05, -3.2), label: () => (S.stage === 'seal' ? 'Seal Cell A' : 'Run response battery'), reach: 2.0, size: 0.7, enabled: () => S.stage === 'console' || S.stage === 'seal', onUse: () => { sfx.beep('console'); S.consoleUsed = true; } });
   interact.add({ position: kit.position, label: 'Take sealant kit', reach: 2.0, enabled: () => S.stage === 'kit', onUse: () => { kit.visible = false; S.kit = true; } });
   interact.add({ position: V(10.0, 1.24, 0.4), label: 'Watch CCTV', reach: 2.0, size: 0.4, enabled: () => S.stage === 'cctv', onUse: () => { S.cctv = true; } });
@@ -414,8 +432,9 @@ export async function intro(game, opts = {}) {
     await ui.card('HALVERSEN BIOCONTAINMENT', 'SITE 41 · WING C<br>06:12 · C-14 ROTATION', 3.6);
     ui.fadeTo(0, 2.5); player.frozen = false;
     await d.wait(1.5);
-    await say(OK, 'Morning, Rook. You\'re on C-14 today. Lind\'s old rotation.');
-    await say(OK, 'Badge in, go through decon, then log in. Overnight notes are on your terminal.');
+    await say(OK, 'Rook. You\'re early. Good.');
+    await say(OK, 'You\'re on C-14 this morning. That was Teodor\'s slot.', 3.2);
+    await say(OK, '...It\'s yours now. Badge in.');
     S.stage = 'badge'; ui.objective('Badge in at the security door.');
     await d.until(() => S.badged);
     doors.outer.open(); ui.objective('Step into the decontamination airlock.');
@@ -432,10 +451,11 @@ export async function intro(game, opts = {}) {
     doors.inner.open(); sfx.setReverb('lab');
     await d.until(() => player.pos.z < LAB.lab.z1 - 0.6);
     doors.inner.close();
-    await say(OK, 'Your terminal\'s on the west wall. Read the notes before you go near the glass.');
+    await say(OK, 'You\'re clean. More or less.');
+    await say(OK, 'Terminal on the west wall. Read the overnight before you go anywhere near the glass. All of it.');
     S.stage = 'login'; ui.objective('Log in at your workstation and read the overnight notes.');
     await d.until(() => S.readNotes);
-    await say(OK, 'Good. Go and look at them. Take your time.');
+    await say(OK, 'Now go and look at them. Don\'t rush it. They notice when you rush.');
     await observe();
   }
 
@@ -448,17 +468,17 @@ export async function intro(game, opts = {}) {
       if (lookingAt(A, 9)) S.observed.A += dt; if (lookingAt(B, 9)) S.observed.B += dt;
       const n = (S.observed.A > 2) + (S.observed.B > 2);
       ui.el.objTxt.textContent = `Observe the specimens (${n}/2).`;
-      if (S.observed.A > 2 && !saidA) { saidA = true; say(OK, 'A hasn\'t moved since Tuesday. Two hundred and eleven nights, facing that wall.'); }
+      if (S.observed.A > 2 && !saidA) { saidA = true; (async () => { await say(OK, 'Two hundred and eleven nights at that wall.'); await say(OK, 'We stopped calling it a posture. It\'s a decision.'); })(); }
       if (S.observed.B > 2 && !saidB) {
         saidB = true;
         // B notices you. It gets up, slowly, walks to the glass and looks at you.
         B.anim.play('goto', { x: clamp(player.pos.x, 2.6, 6.0), z: -6.55, speed: 0.55, face: 0, then: ['idle', { stare: true }], lookAtPlayer: true });
-        (async () => { await say(OK, 'B\'s up. It does that when somebody new comes on shift.'); await say(OK, 'Don\'t stand at the glass too long. It reads faces.'); })();
+        (async () => { await say(OK, 'There. B\'s up.'); await say(OK, 'It does that for new faces.', 2.4); await say(OK, 'And for some old ones.', 2.4); await say(OK, 'Don\'t hold its eyes. It reads you.'); })();
       }
       return n >= 2;
     });
     await d.wait(3.5);
-    await say(OK, 'All right. Response battery. Observation console, centre of the room.');
+    await say(OK, 'All right. The battery\'s queued on the observation console.');
     S.stage = 'console'; ui.objective('Run the response battery at the observation console.');
     await d.until(() => S.consoleUsed); S.consoleUsed = false;
     await battery();
@@ -468,35 +488,37 @@ export async function intro(game, opts = {}) {
     S.stage = 'battery'; ui.objective('Response battery in progress.');
     player.lookAt(V(0, 1.6, -8.5), 1.5); await d.wait(1.0); player.releaseLook();
     // 1. LIGHT
-    await say(OK, 'Test one. Light, two thousand lux.');
+    await say(OK, 'Light first. Two thousand lux.');
     cellBoost = 3.2; sfx.beep('console');
     B.anim.play('shield', { from: V(4.2, 0, -9), dur: 4.5 });
-    await say(OK, 'B shields. A ignores it. Same as every morning.');
+    await say(OK, 'B covers up. A doesn\'t care. Same as every morning.');
     await d.wait(1.5); cellBoost = 1;
     B.anim.play('idle', { stare: true });
     await d.wait(1.2);
     // 2. TONE (above human hearing)
-    await say(OK, 'Test two. Eighteen kilohertz. You won\'t hear it. They will.');
+    await say(OK, 'Tone. Eighteen kilohertz. You won\'t hear a thing.');
     ui.toast('TONE · 18 kHz · RUNNING', 3);
     B.anim.play('convulse');
     await d.wait(1.0);
     A.anim.play('idle', { stare: true }); // for the first time, A turns its head toward you
-    await say(OK, '...');
-    await say(OK, 'A turned its head. That\'s new. Note it.');
+    await say(OK, '...', 2.2);
+    await say(OK, 'A just turned its head.');
+    await say(OK, 'That has never happened. Time-stamp it.');
     await d.wait(1.5);
     A.anim.play('faceWall', { yaw: Math.PI });
     await d.wait(1.2);
     // 3. STROBE
-    await say(OK, 'Last one. Strobe, twelve hertz, three seconds.');
+    await say(OK, 'Strobe. Twelve hertz, three seconds. Last one, then coffee.');
     strobing = 3.0; sfx.beep('console');
     B.anim.play('recoil', { from: V(4.2, 1, -7), dur: 1.0, then: ['leap', { to: V(4.2, 0, -6.6), onImpact: glassHit, then: ['idle', { stare: true }] }] });
     await d.until(() => S.glassHit);
     await d.wait(0.8);
     sfx.alarm(true, 'breach'); await d.wait(1.4); sfx.alarm(false);
-    await say(OK, 'Abort. Abort the battery. Rook, step back from the glass.');
+    await say(OK, 'Abort. Abort— Rook, step back from the glass.');
     await d.wait(1.0);
-    await say(OK, 'It\'s laminated, it\'ll hold. A didn\'t even move. Look at it.');
-    await say(OK, 'I want that pane sealed before shift change. There\'s a sealant kit in Storage, east wall.');
+    await say(OK, 'It\'s laminated. Six layers. It\'ll hold.');
+    await say(OK, 'Look at A. It didn\'t even flinch.', 3.0);
+    await say(OK, 'I want that pane sealed before day shift sees it. Sealant kit. Storage, east door.');
     S.stage = 'kit'; ui.objective('Get the sealant kit from Storage.');
     doors.storage.open();
     await d.until(() => S.kit);
@@ -518,10 +540,11 @@ export async function intro(game, opts = {}) {
     doors.cellA.open(); doors.cellB.open();
     A.anim.world = labWorld; B.anim.world = labWorld;
     sfx.alarm(true, 'breach'); sfx.setTension(0.45);
-    sfx.pa('chime'); await say(PA, 'Containment breach. Wing C. Containment breach. Wing C.');
-    await say(OK, 'Rook. Rook, are you there?');
-    await say(OK, 'The cell locks are on the main bus. When it dropped, they opened. Both of them.');
-    await say(OK, 'Don\'t open that door. There\'s a CCTV terminal in there with you. Look.');
+    sfx.pa('chime'); await say(PA, 'Attention. Containment breach, Wing C. All personnel shelter in place.');
+    await say(OK, 'Rook? Rook, answer me.');
+    await say(OK, 'The cell locks run off the main bus. The bus just dropped.');
+    await say(OK, 'Both doors are open.', 2.6);
+    await say(OK, 'Do not open that door. There\'s a camera terminal in there with you. Use it.');
     cctvMat.uniforms.uOn.value = 1;
     S.stage = 'cctv'; ui.objective('Check the CCTV terminal.');
     await d.until(() => S.cctv);
@@ -538,12 +561,13 @@ export async function intro(game, opts = {}) {
     await d.until(() => B.anim.actionName === 'idle' && S.doorDGone || B.anim.actionName === 'lookAround');
     await d.wait(0.8);
     B.anim.play('goto', { x: -12.5, z: -4, speed: 1.4, crawl: true, then: ['idle'] });
-    await say(OK, 'B\'s gone into D. God.');
+    await say(OK, 'No. No, not D—');
+    await say(OK, 'It\'s gone into the build-out.');
     await d.until(() => B.object.position.x < -10.5);
     B.object.visible = false; bActive = false;
     player.frozen = false; player.releaseLook();
-    await say(OK, 'A\'s still in the lab. It\'s just standing there.');
-    await say(OK, 'There\'s a halide lamp on the rack behind you. Take it.');
+    await say(OK, 'A\'s just... standing there. In the middle of my lab.');
+    await say(OK, 'There\'s a halide lamp on the rack behind you. It\'s charged. Take it.');
     S.stage = 'lamp'; ui.objective('Take the halide lamp.');
     await d.until(() => S.lamp);
     save.set('prologue', 'lamp');
@@ -552,8 +576,9 @@ export async function intro(game, opts = {}) {
 
   async function recapture() {
     ui.toast('RIGHT MOUSE / Q · FLASH', 6);
-    await say(OK, 'A full flash drives them back. A hates it more than B does.');
-    await say(OK, 'Get A back into its cell, then seal it from the console. I\'m opening your door.');
+    await say(OK, 'One full flash and it backs off. A hates the strobe even more than B does.');
+    await say(OK, 'Walk it back into its cell. Don\'t let it get close, and don\'t let it wait in the dark with you.');
+    await say(OK, 'I\'m opening your door.', 2.4);
     sfx.setTension(0.75);
     doors.storage.open();
     S.stage = 'recapture'; ui.objective('Drive C-14A back into Cell A with the halide lamp.');
@@ -572,6 +597,9 @@ export async function intro(game, opts = {}) {
       const to = ap.clone().add(dir);
       A.anim.play('recoil', { from: game.camera.position.clone(), dur: 0.9, then: ['retreat', { x: to.x, z: to.z, speed: 1.1, then: ['stalk'] }] });
       close = 0;
+      S.hits = (S.hits || 0) + 1;
+      const lines = [null, 'Good. Again.', 'Keep the light on it.', 'Closer to the cell. You\'re nearly there.', 'Don\'t let it settle.'];
+      if (lines[S.hits]) say(OK, lines[S.hits], 2.2);
     });
     await d.until(() => {
       if (S.dead) return false;
@@ -587,7 +615,8 @@ export async function intro(game, opts = {}) {
       if (close > 2.2) { die(); }
       return false;
     });
-    await say(OK, 'It\'s in. It\'s going back to its wall. Seal it. Now.');
+    await say(OK, 'It\'s in. It\'s going back to its wall...');
+    await say(OK, 'Seal it. Now, Rook.');
     S.stage = 'seal'; ui.objective('Seal Cell A from the observation console.');
     await d.until(() => S.consoleUsed);
     doors.cellA.close(); sfx.alarm(false); sfx.setTension(0.3);
@@ -616,12 +645,14 @@ export async function intro(game, opts = {}) {
   async function ending() {
     S.stage = 'end';
     await d.wait(1.2);
-    await say(OK, '...Thank you.');
-    await say(OK, 'B went through the Wing D door. The construction side. Half-finished, no cameras past the first section.');
-    await say(OK, 'Lockdown has sealed the site. Response team is forty minutes out.');
-    await say(OK, 'You\'re the only one in Wing C cleared for C-14. You know them better than anyone alive.');
+    await say(OK, '...Okay.', 2.0);
+    await say(OK, 'Okay. Thank you.');
+    await say(OK, 'B went through the Wing D door. The build-out. Half a floor of steel studs, and no cameras past the first bay.');
+    await say(OK, 'Lockdown has sealed the site. The response team is forty minutes out, and they won\'t go in there.');
+    await say(OK, 'You\'re the only one left in Wing C who\'s cleared for C-14. You know them better than anyone alive.');
+    await say(OK, 'Better than anyone left, anyway.', 3.0);
     await say(OK, 'Find it. Bring it back.');
-    await say(OK, 'If you can\'t bring it back, the lamp has a setting for that.');
+    await say(OK, 'And if you can\'t bring it back... the lamp has a setting for that. I\'ll talk you through it when you need it.');
     ui.objective('Go to the Wing D door.');
     await d.until(() => player.pos.distanceTo(V(LAB.doors.wingD.x + 0.4, 0, LAB.doors.wingD.z)) < 1.6);
     player.frozen = true; player.lookAt(V(-12, 1.4, -4), 1.2);
@@ -629,8 +660,8 @@ export async function intro(game, opts = {}) {
     await ui.fadeTo(1, 2.5);
     save.set('chapter', 1); save.set('prologue', 'done');
     sfx.setAmbience('none', 0, 2); sfx.setTension(0); sfx.alarm(false);
-    await ui.card('CHAPTER ONE', 'THE BUILD-OUT<br><br>in development', 5);
-    location.href = location.pathname + (location.search.includes('meta') ? location.search : '');
+    const { chapter1 } = await import('./chapter1.js');
+    await game.load(chapter1, {});
   }
 
   // ---------------------------------------------------------------- wing D door can be smashed by B
@@ -703,7 +734,7 @@ export async function intro(game, opts = {}) {
       }
       // emergency beacons rotate
       if (!power) for (const [i, b] of beacons.entries()) { const a = t * 3.2 + i * 2; b.light.target.position.set(b.base.x + Math.cos(a) * 4, 0.2, b.base.z + Math.sin(a) * 4); b.light.target.updateMatrixWorld(); }
-      cctvMat.uniforms.uTime.value = t; renderCCTV();
+      cctvMat.uniforms.uTime.value = t; renderCCTV(); updateShadows();
       // where you are decides how footsteps and the room sound
       const p = player.pos;
       game.surface = inRect(p, LAB.airlock) ? 'metal' : 'tile';

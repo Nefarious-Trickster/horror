@@ -40,6 +40,8 @@
     #bar { height: 100%; width: 0; background: var(--ui-accent); transition: width 0.2s; }
     #menu .opts { display: flex; flex-direction: column; gap: 10px; align-items: center; }
     #menu button { font: 500 12px/1 var(--ui-mono); letter-spacing: 0.3em; color: var(--ui-dim); background: none; border: 1px solid var(--line); padding: 14px 0; width: 260px; max-width: 100%; cursor: default; opacity: 0.45; transition: all 0.3s; }
+    #menu button.always { opacity: 1; color: var(--ui-fg); cursor: pointer; border-color: var(--line-hi); }
+    #menu button.always:hover, #menu button.always:focus-visible { border-color: var(--ui-accent); color: #fff; outline: none; }
     #menu.ready button { opacity: 1; color: var(--ui-fg); cursor: pointer; border-color: var(--line-hi); }
     #menu.ready button:hover, #menu.ready button:focus-visible { border-color: var(--ui-accent); color: #fff; outline: none; }
     #menu .keys { margin-top: 30px; font: 400 11px/2 var(--ui-mono); color: var(--ui-dim); letter-spacing: 0.06em; }
@@ -69,7 +71,9 @@
       <div class="load"><div id="bar"></div></div>
       <div class="opts">
         <button type="button" data-level="intro">BEGIN · PROLOGUE</button>
+        <button type="button" data-level="chapter1">CHAPTER ONE · THE BUILD-OUT</button>
         <button type="button" data-level="test">CREATURE STUDY</button>
+        <button type="button" id="settingsBtn" class="always">SETTINGS</button>
       </div>
       <div class="keys">
         <b>WASD</b> move · <b>mouse</b> look · <b>shift</b> run · <b>C</b> crouch · <b>E</b> use<br />

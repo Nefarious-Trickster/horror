@@ -64,7 +64,7 @@ export class Player {
       input.takeLook();
     } else if (!this.lookLocked) {
       const [dx, dy] = input.takeLook();
-      this.yaw -= dx * this.sens; this.pitch = clamp(this.pitch - dy * this.sens, -1.45, 1.45);
+      this.yaw -= dx * this.sens; this.pitch = clamp(this.pitch - dy * this.sens * (this.invertY ? -1 : 1), -1.45, 1.45);
     } else input.takeLook();
 
     // move
@@ -79,7 +79,7 @@ export class Player {
     this.vel.lerp(want, 1 - Math.exp(-dt * 9));
     const step = this.vel.clone().multiplyScalar(dt);
     this.pos.add(step);
-    this.collide(this.pos);
+    if (!this.frozen) this.collide(this.pos); // frozen: scripted placement (hiding spots) wins
     const speed = this.vel.length();
     this.running = run && speed > 2;
 
