@@ -699,8 +699,8 @@ export async function chapter2(game, opts = {}) {
     save.set('halloran', CH.halloran || 'left');
     save.set('truth', (save.get('truth', 0) || 0) + CH.docs.filter((k) => k !== 'schematic').length);
     await say(OK, 'Before you go up. That photograph you picked up, if you did. It\'s an old one. Things were different.', 4.6);
-    await ui.card('CHAPTER THREE', 'THE ARCHIVE<br><br>in development', 5);
-    location.href = location.pathname;
+    const { chapter3 } = await import('./chapter3.js');
+    await game.load(chapter3, {});
   }
 
   // ---------------------------------------------------------------- death

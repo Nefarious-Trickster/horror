@@ -15,6 +15,11 @@ import { staticBatch } from './batch.js';
 if (!THREE.ShaderChunk.roughnessmap_fragment.includes('GLOSSY')) {
   THREE.ShaderChunk.roughnessmap_fragment += '\n#ifndef GLOSSY\n\troughnessFactor = max( roughnessFactor, 0.26 );\n#endif\n';
 }
+// A spotlight's projected texture (a torch cookie, a film projector) should be the whole of its light:
+// three.js leaves any part of the cone outside the texture's frame at full brightness. Make it dark.
+THREE.ShaderChunk.lights_fragment_begin = THREE.ShaderChunk.lights_fragment_begin.replace(
+  'directLight.color = inSpotLightMap ? directLight.color * spotColor.rgb : directLight.color;',
+  'directLight.color = inSpotLightMap ? directLight.color * spotColor.rgb : vec3( 0.0 );');
 
 // resolution cap and shadow detail per quality tier
 const TIERS = {

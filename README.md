@@ -6,8 +6,9 @@ A first-person horror game in a private biocontainment facility. You work the C-
 - **Prologue (Intake):** fully playable.
 - **Chapter One (The Build-Out):** fully playable, about 10 to 15 minutes. B is loose on an unfinished construction floor in the dark, and it hunts you. Find diesel, start the generator, close three zone breakers (it won't walk into the light), find Lind's lift key, then survive until the freight lift arrives. Hide in lockers, crouch to stay quiet, and flash it with the halide lamp when it gets close. Dying sends you back to your last checkpoint.
 - **Chapter Two (Pump Level):** fully playable. The freight lift lets you out onto a flooded service sublevel, knee-deep and dark. Start three drainage pumps in order (prime each one and close the bleed valve while the gauge needle is in the green; too late and the relief valve bangs). Every step splashes and B is in the water with you: you'll see its wake before its body. Sgt. Halloran is pinned in the cable gallery, and freeing him is loud. Save him or leave him; it's remembered.
+- **Chapter Three (The Archive):** fully playable. The records vault and the old observation theatre. The mine lift code is on microfiche in the vault's restricted cage, behind mobile shelving you have to crank open (loudly) while B hunts the stacks. The reading room runs off the theatre's circuit, so you climb the seating to the projection booth. The LANTERN reel can be threaded and run: the trial footage is projected onto the screen, and B comes to watch it. Then the choice: burn the files as Okafor orders, or upload them to the audit relay.
 - **Creature study:** a room for watching the monster's animations.
-- **Chapters 3 to 5:** in development.
+- **Chapters 4 and 5:** in development.
 
 ## Run it
 
@@ -15,7 +16,7 @@ A first-person horror game in a private biocontainment facility. You work the C-
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. Add `?level=chapter1` or `?level=chapter2` to jump straight to a chapter. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
+Then open <http://localhost:8000>. Add `?level=chapter1`, `?level=chapter2` or `?level=chapter3` to jump straight to a chapter. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
 
 | Input | Action |
 | --- | --- |
@@ -26,7 +27,7 @@ Then open <http://localhost:8000>. Add `?level=chapter1` or `?level=chapter2` to
 | E | use / interact / hide in a locker |
 | Esc | pause menu and settings (mouse sensitivity, invert Y, field of view, quality, FPS counter) |
 | F | flashlight |
-| Right mouse / Q | flash the halide lamp (once you have it) |
+| Right mouse / Q | flash the halide lamp (once you have it). Aim for the chest, up close. It works less each time in quick succession; by the third flash it covers its eyes and charges |
 | Touch | left thumb walks, right thumb looks; on-screen buttons for use, flash, light and crouch |
 
 In the creature study you can also use: L inspection light, P freeze, and the number keys 1–0 and R for the actions below (Esc frees the mouse so you can click the panel instead).

@@ -12,6 +12,7 @@ const LEVELS = {
   intro: () => import('./levels/intro.js').then((m) => m.intro),
   chapter1: () => import('./levels/chapter1.js').then((m) => m.chapter1),
   chapter2: () => import('./levels/chapter2.js').then((m) => m.chapter2),
+  chapter3: () => import('./levels/chapter3.js').then((m) => m.chapter3),
   test: async () => testRoom,
 };
 
