@@ -46,7 +46,7 @@ Okafor knows exactly where it is going and why. If anyone outside learns what LA
 | Chapter 3 | **The Archive** | Records vault and old observation theatre | 25–35 min |
 | Chapter 4 | **The Nest** | The 2019 containment chamber in the mine | 25–35 min |
 | Chapter 5 | **Lights Out** | Central core and lift shaft during the purge | 20–30 min |
-| Epilogue | depends on the ending | various | 3–5 min |
+| Epilogue | depends on the ending (built) | various | 3–5 min |
 
 ---
 

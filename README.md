@@ -10,6 +10,7 @@ A first-person horror game in a private biocontainment facility. You work the C-
 - **Creature study:** a room for watching the monster's animations.
 - **Chapter Four (The Nest):** fully playable. The cage drops you four hundred metres to Level 400 of the old mine. A phone rings in the abandoned station. Switch on the drift lighting and see what has been hung on every timber set; find the 2019 survey camp; crawl the return airway into Chamber Five, which B has made into a copy of Lind's office, with chairs in rows and four missing staff asleep under lab coats. Wear a respirator (M) or the air raises your exposure. Hide when it comes home. Then Okafor starts the purge (a twenty-minute clock) and you choose how this ends: the lure, the lamp's overcharge, or, if you followed Lind's trail all the way (his badge from Chapter Three and all three tapes), the last dose of LANTERN-0. The first time it catches you down here it only holds you.
 - **Chapter Five (Lights Out):** fully playable, with all five endings. The purge cuts the hoist at Level 200 and something is on the roof of your cage. Pump the core door open, climb the core while the lights die below you and the gas rises up the shaft, pull three isolators on Level 100 as the purge controller sheds the lights, stop the fan, and reach the surface hoist, where B is already waiting. The confrontation depends on your plan; the ending depends on everything (`docs/STORY.md`).
+- **Epilogue:** a short playable coda for each ending: your first morning as lead in Wing C (someone has put the chairs in rows), a burial on the hillside at dawn, a search party at dusk months later, leading it out into the morning and then the security camera in Cell A, or the view from inside Cell B. Once you have reached an ending it can be replayed from the menu (`?level=epilogue&ending=recaptured|quiet|mercy|longdark|lantern|replacement`).
 
 ## Run it
 
@@ -117,4 +118,4 @@ assets/                 creature model, CC0 textures (ambientCG), HDRI (Poly Hav
 ## Assets and credits
 
 - The creature, lab equipment, sound and room surfaces are generated in code.
-- Textures come from [ambientCG](https://ambientcg.com) and [Poly Haven](https://polyhaven.com) (`rock_wall_10`, `rocky_trail` for the mine), and the hospital lighting environment from Poly Haven. All are CC0, and `tools/fetch_assets.py` re-downloads the ambientCG set.
+- Textures come from [ambientCG](https://ambientcg.com) and [Poly Haven](https://polyhaven.com) (`rock_wall_10`, `rocky_trail` for the mine, `aerial_grass_rock` for the hillside), and the hospital lighting environment from Poly Haven. All are CC0, and `tools/fetch_assets.py` re-downloads the ambientCG set.

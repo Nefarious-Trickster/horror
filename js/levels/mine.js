@@ -136,7 +136,7 @@ function coatParts() {
   if (coatGeo) return;
   // body: a lathe from the shoulders down, flattened front to back, open down the front
   const prof = [[0.05, 0.04], [0.17, -0.02], [0.2, -0.12], [0.19, -0.4], [0.2, -0.7], [0.23, -1.0], [0.245, -1.14]].map(([r, y]) => new THREE.Vector2(r, y));
-  const body = new THREE.LatheGeometry(prof, 18, Math.PI * 0.55, Math.PI * 1.9); body.scale(1, 1, 0.42);
+  const body = new THREE.LatheGeometry(prof, 18, Math.PI * 0.05, Math.PI * 1.9); // open down the front (+z) body.scale(1, 1, 0.42);
   const sl = (s) => { const g = new THREE.CylinderGeometry(0.055, 0.07, 0.66, 8, 1, true); g.rotateZ(-s * 0.08); g.translate(s * 0.215, -0.38, 0.01); return g; };
   const collar = new THREE.TorusGeometry(0.085, 0.02, 6, 12, Math.PI * 1.4); collar.rotateX(Math.PI / 2); collar.rotateY(Math.PI * 0.8); collar.scale(1, 1, 0.6); collar.translate(0, 0.0, 0.01);
   const hook = new THREE.TorusGeometry(0.035, 0.006, 4, 10, Math.PI * 1.3); hook.translate(0, 0.08, 0);

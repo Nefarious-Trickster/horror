@@ -15,6 +15,7 @@ const LEVELS = {
   chapter3: () => import('./levels/chapter3.js').then((m) => m.chapter3),
   chapter4: () => import('./levels/chapter4.js').then((m) => m.chapter4),
   chapter5: () => import('./levels/chapter5.js').then((m) => m.chapter5),
+  epilogue: () => import('./levels/epilogue.js').then((m) => m.epilogue),
   test: async () => testRoom,
 };
 
@@ -33,6 +34,8 @@ async function start(name, opts) {
   window.__ready = true;
 }
 for (const b of document.querySelectorAll('#menu [data-level]')) b.addEventListener('click', () => start(b.dataset.level));
+// the epilogue button appears once you have reached an ending
+try { const sv = JSON.parse(localStorage.getItem('the-tall-one/save/v1')) || {}; const eb = document.querySelector('#menu [data-level="epilogue"]'); if (eb) eb.hidden = !sv.ending; } catch { /* no storage */ }
 $('settingsBtn').addEventListener('click', () => game.ui.openSettings(game.settings));
 
 // direct entry for testing: ?level=intro|test (&noui hides the menu instantly)

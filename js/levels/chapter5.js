@@ -91,6 +91,7 @@ export async function chapter5(game, opts = {}) {
     gasA: 0, gasCore: 0, gasC: 0, lureSet: false, done: false, ending: null, gotMask: false,
   }, opts.state || {});
   const checkpoint = () => save.set('ch5', JSON.parse(JSON.stringify({ ...CH, dead: false, exposure: expo.value, filter: resp.filter, filters: resp.filters })));
+  let fanNear = 0, fanHinted = false;
   let busy = false, pumpBusy = false, fanSpin = 1, liftHere = false, clingT = 0, lowWarned = false;
 
   // ---------------------------------------------------------------- assets
@@ -214,6 +215,12 @@ export async function chapter5(game, opts = {}) {
   const fanDoor = PP.pressureDoor({ w: 1.6, h: 2.1 }); fanDoor.position.set(34, Y1, 15.4); fanDoor.rotation.y = R.E; fanDoor.userData.dynamic = true; scene.add(fanDoor);
   const fanDoorBox = { minX: 33.8, maxX: 34.2, minZ: 14.4, maxZ: 16.4, y0: Y1 - 1, y1: 99 }; colliders.push(fanDoorBox);
   const fanLamp = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), new THREE.MeshStandardMaterial({ color: 0x300, emissive: 0xff2010, emissiveIntensity: 2 })); fanLamp.position.set(33.7, Y1 + 2.4, 16.8); fanLamp.userData.dynamic = true; scene.add(fanLamp);
+  // Fan 1's isolator: a big breaker on the fan house's west wall, with a running lamp over it
+  const fanBreaker = kit('breakerPanel', [{ label: 'FAN 1 · ISOLATE' }], [0.5, 0.7, 0.2]);
+  fanBreaker.position.set(34.22, Y1 + 1.35, 22); fanBreaker.rotation.y = R.E; fanBreaker.userData.dynamic = true; scene.add(fanBreaker); fanBreaker.userData.setOn?.(true);
+  const fanRun = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff3010, emissiveIntensity: 2.5 }));
+  fanRun.position.set(34.26, Y1 + 2.05, 22); fanRun.userData.dynamic = true; scene.add(fanRun);
+  { const s = sign('FAN 1 · ISOLATOR', { w: 0.9, h: 0.16, style: 'warning' }); s.position.set(34.23, Y1 + 2.35, 22); s.rotation.y = R.E; scene.add(s); }
   const fan = new THREE.Group();
   {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(2.9, 0.22, 10, 40), steel); fan.add(ring);
@@ -395,7 +402,8 @@ export async function chapter5(game, opts = {}) {
   interact.add({ position: () => maskObj.position, reach: 2, size: 0.3, label: 'Take the respirator', enabled: () => !CH.mask, onUse: () => { CH.mask = true; maskObj.visible = false; ui.toast('RESPIRATOR · M TO WEAR', 3); checkpoint(); refreshObjective(); } });
   interact.add({ position: () => filterObj.position, reach: 2, size: 0.3, label: 'Take the spare filters', enabled: () => !CH.gotFilters, onUse: () => { CH.gotFilters = true; filterObj.visible = false; resp.filters += 2; ui.toast('2 FILTERS', 2.5); checkpoint(); } });
   ISO.forEach((p, i) => interact.add({ position: p, reach: 2.2, size: 0.45, label: `Pull isolator I-${i + 1}`, enabled: () => CH.stage === 'gallery' && !CH.iso.includes(i) && !busy, onUse: () => game.run(() => pullIso(i)) }));
-  interact.add({ position: V(34.4, Y1 + 1.5, 22), reach: 2.2, size: 0.5, label: 'Isolate Fan 1', enabled: () => CH.stage === 'fan' && !CH.fanOff && !busy, onUse: () => game.run(stopFan) });
+  interact.add({ position: V(34.4, Y1 + 1.4, 22), reach: 2.6, size: 0.75, label: 'Isolate Fan 1 (pull the breaker)', enabled: () => (CH.stage === 'fan' || CH.iso.length >= 3) && !CH.fanOff && !busy, onUse: () => game.run(stopFan) });
+  interact.add({ position: V(40, Y1 + 1.6, 28.8), reach: 4, size: 1.6, label: 'Fan 1 is running: isolate it at the breaker on the west wall', enabled: () => !CH.fanOff && !busy, onUse: () => sfx.beep('deny') });
   interact.add({ position: () => callPanel.position, reach: 2, size: 0.35, label: 'Call the hoist', enabled: () => CH.stage === 'finale' && CH.plan === 'lure' && !liftCalled, onUse: () => game.run(callLift) });
   interact.add({ position: V(41, Y1 + 0.5, 57.3), reach: 2.4, size: 0.6, label: 'Break the lure open in the car', enabled: () => CH.stage === 'finale' && CH.plan === 'lure' && liftHere && !CH.lureSet, onUse: () => game.run(setLure) });
   interact.add({ position: V(43, Y1 + 1.1, 55.85), reach: 2.2, size: 0.4, label: 'Pull the gate lever', enabled: () => CH.stage === 'finale' && CH.plan === 'lure' && CH.lureSet && !gateClosed, onUse: () => game.run(closeGate) });
@@ -560,10 +568,10 @@ export async function chapter5(game, opts = {}) {
     } else {
       shed('battery'); fanLamp.material.emissive.set(0x10ff40); sfx.beep('ok');
       fanDoor.userData.setOpen?.(0.9); fanDoorBox.disabled = true; rebuildGrid();
-      await say(OK, 'The fan house door is open. The agent is in the Level 100 ducts now, Rook. You have minutes.', 4.4);
       gasCRate = 0.012;
       CH.stage = 'fan'; checkpoint(); refreshObjective();
       sfx.setAmbience('purge', 0.9, 3);
+      await say(OK, 'The fan house door is open. The agent is in the Level 100 ducts now, Rook. You have minutes.', 4.4);
     }
   }
   let gasCRate = 0.004;
@@ -571,8 +579,10 @@ export async function chapter5(game, opts = {}) {
   // ---------------------------------------------------------------- the fan house
   const fanLoop = sfx.loop('fan', V(40, Y1 + 3, 29), 1);
   async function stopFan() {
-    busy = true; CH.fanOff = true;
+    busy = true; CH.fanOff = true; CH.stage = 'fan';
+    fanBreaker.userData.setOn?.(false); fanRun.material.emissive.set(0x10ff40); fanRun.material.emissiveIntensity = 1.5;
     sfx.metalImpact(V(34.4, Y1 + 1.5, 22), 1.0); sfx.powerDown();
+    game.run(() => say(OK, 'Fan 1 is spinning down. Give it a few seconds, then go through it.', 3.6));
     // it winds down; in the silence, something breathing right behind you
     const T0 = d.t; await d.until(() => { const k = Math.min(1, (d.t - T0) / 11); fanSpin = 1 - k; fanLoop.set(1 - k, 0.3); return k >= 1; });
     fanLoop.stop(1); fanBox.disabled = true; rebuildGrid(); busy = false; refreshObjective();
@@ -798,12 +808,11 @@ export async function chapter5(game, opts = {}) {
     await ui.fadeTo(1, 3);
     hunter.script(true); B.object.visible = false; fanLoop.stop?.(0.5);
     sfx.setAmbience('none', 0, 3);
-    const [title, lines] = ENDINGS[kind];
-    await d.wait(1);
-    for (const l of lines) await ui.card('', l, Math.max(4.5, l.length * 0.055));
-    await ui.card(title, 'an ending', 4.5);
-    await ui.card('THE TALL ONE', 'thank you for playing', 4);
-    location.href = location.pathname;
+    void ENDINGS;
+    await d.wait(1.5);
+    await ui.card('EPILOGUE', '', 3.5);
+    const { epilogue } = await import('./epilogue.js');
+    await game.load(epilogue, { ending: kind });
   }
 
   // ---------------------------------------------------------------- death
@@ -830,7 +839,7 @@ export async function chapter5(game, opts = {}) {
   if (CH.iso.length >= 1) shed('gallery');
   if (CH.iso.length >= 2) shed('switch');
   if (CH.iso.length >= 3) { shed('battery'); fanDoor.userData.setOpen?.(0.9); fanDoorBox.disabled = true; fanLamp.material.emissive.set(0x10ff40); }
-  if (CH.fanOff) { fanSpin = 0; fanLoop.stop(0); fanBox.disabled = true; }
+  if (CH.fanOff) { fanSpin = 0; fanLoop.stop(0); fanBox.disabled = true; fanBreaker.userData.setOn?.(false); fanRun.material.emissive.set(0x10ff40); }
   rebuildGrid();
   window.__ch5 = { CH, hunter, B, player, interact, grid, hide, expo, resp, lamp, groundAt, cling, use: (re) => { const it = interact.items.find((i) => i.enabled() && re.test(typeof i.label === 'function' ? i.label() : i.label)); if (it) it.onUse(it); return !!it; } };
 
@@ -882,6 +891,7 @@ export async function chapter5(game, opts = {}) {
       if (inRect(ROOMS.duct, player.pos.x, player.pos.z, 0.1) && player.groundY > 10 && !player.frozen && !player.crouch) { player.crouch = true; if (!lowWarned) { lowWarned = true; ui.toast('TOO LOW TO STAND', 2); } }
       // the fan
       fan.userData.blades.rotation.z -= dt * 14 * fanSpin;
+      if (!CH.fanOff && !fanHinted && player.groundY > 10 && Math.hypot(player.pos.x - 40, player.pos.z - 28) < 5) { fanNear += dt; if (fanNear > 4) { fanHinted = true; game.run(() => say(OK, 'Rook, you can\'t go through it running. There\'s an isolator on the west wall of the fan house: the big breaker under the red lamp.', 5)); } } else fanNear = 0;
       // gas rising: Level 200 after the doors, the core behind you, Level 100
       if (gasStart >= 0) gasA.setLevel(Math.min(2.4, (d.t - gasStart) * 0.0045));
       if (gasCoreStart >= 0) gasCore.setLevel(Math.min(Y1 - 2, (d.t - gasCoreStart) * 0.06));
