@@ -318,7 +318,7 @@ export async function chapter1(game, opts = {}) {
   });
 
   // ---------------------------------------------------------------- lighting
-  const hemi = new THREE.HemisphereLight(0x4a5870, 0x14100c, game.params.has('bright') ? 3 : 0.22); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0x4a5870, 0x14100c, game.params.has('bright') ? 3 : 0.9); scene.add(hemi);
   game.flashlight.base = 230; game.flashlight.light.angle = 0.5; game.flashlight.light.distance = 34;
   const redA = new THREE.PointLight(0xff2010, 2.2, 10, 1.8); redA.position.set(-12, 2.7, -4); scene.add(redA);
   const redB = new THREE.PointLight(0xff1c0c, 2.6, 14, 1.8); redB.position.set(-27, 3.0, -2); scene.add(redB);

@@ -515,7 +515,8 @@ export function flashlightCookie() {
     s.addColorStop(0, `rgba(0,0,0,${0.05 + Math.random() * 0.1})`); s.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = s; g.fillRect(x - rr, y - rr, rr * 2, rr * 2);
   }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  // linear on purpose: as sRGB the outer ring decodes to a few percent and the beam shrinks to a pinpoint
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace;
   return t;
 }
 

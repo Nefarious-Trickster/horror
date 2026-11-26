@@ -8,8 +8,24 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 //
 // Objects (and their descendants) are skipped when they, or an ancestor, have
 // userData.dynamic = true, or are skinned/instanced/points/lines, or are transparent.
+// Zero-length or non-finite normals turn into NaN in the lighting on real GPUs, and one NaN pixel
+// is smeared across the whole frame by the bloom blur (a black screen). Repair them in place.
+export function repairNormals(geo) {
+  const n = geo.attributes?.normal;
+  if (!n || n.isInterleavedBufferAttribute) return 0;
+  let fixed = 0;
+  for (let i = 0; i < n.count; i++) {
+    const x = n.getX(i), y = n.getY(i), z = n.getZ(i), l = x * x + y * y + z * z;
+    if (!(l > 1e-12) || !Number.isFinite(l)) { n.setXYZ(i, 0, 1, 0); fixed++; }
+  }
+  if (fixed) n.needsUpdate = true;
+  return fixed;
+}
+
 export function staticBatch(root, { keepNames = false } = {}) {
   root.updateMatrixWorld(true);
+  const seen = new Set();
+  root.traverse((o) => { if ((o.isMesh || o.isSkinnedMesh) && o.geometry && !seen.has(o.geometry)) { seen.add(o.geometry); repairNormals(o.geometry); } });
   const groups = new Map();
   const isDynamic = (o) => { for (let p = o; p; p = p.parent) if (p.userData?.dynamic) return true; return false; };
   const candidates = [];

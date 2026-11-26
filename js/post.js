@@ -61,6 +61,18 @@ export function createPost(renderer, scene, camera, { quality = 'high', ao = tru
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: Q >= 3 ? 12 : 6 });
     composer.addPass(gtao);
   }
+  // safety net: a stray NaN/Inf pixel (bad normal, degenerate geometry) would be smeared over the whole
+  // frame by the bloom blur and black out the screen. Zero them before bloom.
+  const sanitize = new ShaderPass({
+    uniforms: { tDiffuse: { value: null } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+      void main() { vec4 c = texture2D(tDiffuse, vUv);
+        if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+        gl_FragColor = vec4(min(c.rgb, vec3(64.0)), c.a); }`,
+  });
+  sanitize.enabled = Q >= 1;
+  composer.addPass(sanitize);
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.45, 0.7, 0.82);
   bloom.enabled = Q >= 1;
   composer.addPass(bloom);

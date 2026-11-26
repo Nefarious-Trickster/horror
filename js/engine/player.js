@@ -120,7 +120,7 @@ export class Flashlight {
     this.rig = new THREE.Object3D();
     this.rig.add(this.light, this.light.target);
     this.light.position.set(0.17, -0.2, 0.05);
-    this.light.target.position.set(0.02, -0.05, -4);
+    this.light.target.position.set(0.04, -0.85, -4); // a touch below the eye line, so the floor ahead is lit
     scene.add(this.rig);
     this.on = false; this.base = intensity; this.flicker = 1; this.available = true;
   }
