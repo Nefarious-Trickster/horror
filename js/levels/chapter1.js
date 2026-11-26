@@ -156,7 +156,7 @@ export async function chapter1(game, opts = {}) {
       for (const o of [...openings, { at: len + 0.5, width: 0 }]) { const a = prev, b = o.at - o.width / 2; if (b > a) { const m = new THREE.Mesh(new THREE.BoxGeometry(b - a, 2.9, 0.12), fbMat); m.position.set((a + b) / 2 - len / 2, 1.45, 0); m.castShadow = m.receiveShadow = true; w.add(m); } prev = o.at + o.width / 2; }
     }
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    w.position.set(along ? Math.min(x0, x1) + len / 2 : cx, 0, along ? cz : Math.min(z0, z1) + len / 2); w.rotation.y = along ? 0 : Math.PI / 2;
+    w.position.set(along ? Math.min(x0, x1) + len / 2 : cx, 0, along ? cz : Math.min(z0, z1) + len / 2); w.rotation.y = along ? 0 : -Math.PI / 2; // local +X runs along +Z so openings line up with their gaps
     if (!w.userData.colliders && !w.userData.collider) w.userData.collider = null;
     scene.add(w);
     // collision + sight: the wall minus its openings
@@ -193,7 +193,7 @@ export async function chapter1(game, opts = {}) {
   }
   // plastic sheeting curtains (block sight, not movement)
   const sheets = [];
-  for (const [x, z, rot, w] of [[-24, -5, R.W, 3], [-30, 1, 0, 3.4], [-36, -8, R.W, 2.8], [-28, -16, R.W, 3], [-22, -16, R.W, 3], [-42.5, -6, 0, 2.6], [-43, 2, R.W, 3]]) {
+  for (const [x, z, rot, w] of [[-24, -5, R.W, 3], [-30, 1, 0, 3.4], [-37, -2.5, R.W, 2.8], [-28, -16, R.W, 3], [-22, -16, R.W, 3], [-42.5, -6, 0, 2.6], [-43, 2, R.W, 3]]) {
     const s = kit('sheeting', [{ w, h: 2.9 }], null);
     s.position.set(x, 0, z); s.rotation.y = rot; s.userData.dynamic = true; scene.add(s); sheets.push(s);
     const half = w / 2;
@@ -236,8 +236,29 @@ export async function chapter1(game, opts = {}) {
   }
 
   // store room (fuel, a spare cell, the memo)
-  place(model('steel_frame_shelves_01', [1.8, 2, 0.5]), -28, 13.5, R.S);
-  place(model('steel_frame_shelves_01', [1.8, 2, 0.5]), -31.4, 10, R.E);
+  // shelving, stocked with whatever the trades left behind
+  let shelfSeed = 7;
+  const srand = () => { shelfSeed = (shelfSeed * 16807) % 2147483647; return shelfSeed / 2147483647; };
+  const STOCK = [['cardboard_box_01', 0.52, Math.PI / 2], ['plastic_crate_03', 0.5, 0], ['spray_paint_bottles', 0.2, 0], ['plastic_jerrycan', 0.3, Math.PI / 2], ['Drill_01', 0.2, 0.3], ['binder_notebook', 0.6, 0]];
+  function shelf(x, z, rot, empty = []) {
+    const sh = model('steel_frame_shelves_01', [1.1, 2.1, 0.5]);
+    const g = new THREE.Group(); g.add(sh);
+    [0.115, 0.625, 1.135, 1.635].forEach((y, lv) => {
+      if (empty.includes(lv)) return;
+      let u = -0.5;
+      while (u < 0.45) {
+        const [id, w, r0] = STOCK[Math.floor(srand() * STOCK.length)];
+        if (u + w > 0.52) break;
+        if (srand() < 0.25) { u += 0.15; continue; }
+        const m = model(id, null); m.position.set(u + w / 2, y, (srand() - 0.5) * 0.06); m.rotation.y = r0 + (srand() - 0.5) * 0.25; g.add(m);
+        u += w + 0.03;
+      }
+    });
+    g.userData.collider = { w: 1.1, d: 0.5 };
+    return place(g, x, z, rot);
+  }
+  shelf(-28, 13.7, R.S); shelf(-29.2, 13.7, R.S, [2]);
+  shelf(-31.68, 10, R.E, [1]); shelf(-31.68, 11.2, R.E);
   place(model('metal_tool_chest', [0.7, 0.65, 0.4]), -26.0, 13.5, R.S);
   place(model('propane_tank', null), -24.6, 13.5, 0);
   place(model('plastic_crate_03', [0.6, 0.35, 0.4]), -25, 7.2, 0.4);
@@ -285,7 +306,8 @@ export async function chapter1(game, opts = {}) {
     b.obj = o; b.use = b.pos.clone().add(V(Math.sin(b.rot), 0, Math.cos(b.rot)).multiplyScalar(0.2));
   }
   // spare lamp cells
-  const cellSpots = [V(-26.4, 1.05, 13.2), V(-34.2, 0.95, 7.4), V(-49.2, 0.9, -11.5)];
+  place(model('cardboard_box_01', null), -34.2, 7.4, 0.3);
+  const cellSpots = [V(-26.1, 0.7, 13.45), V(-34.2, 0.395, 7.4), V(-49.45, 0.395, -8.45)]; // on the tool chest, a box, the boxes in the bay
   const cellMeshes = cellSpots.map((p, i) => {
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.08), new THREE.MeshStandardMaterial({ color: 0x23272a, roughness: 0.5, metalness: 0.4 }));
@@ -316,7 +338,15 @@ export async function chapter1(game, opts = {}) {
   workLight('south', -16, -19, -26, -14, true); workLight('south', -39, -13, -30, -18, false);
   workLight('west', -41, 13.2, -47, 6, true); workLight('west', -41, -5, -48, 2, false);
   // the site office has its own desk lamp on a battery (always on: a pool of light to find)
-  const deskLamp = new THREE.PointLight(0xffc88a, 1.8, 5.5, 1.8); deskLamp.position.copy(opt('desk', V(-19.5, 1.2, 11.5))).add(V(0, 0.45, 0)); scene.add(deskLamp);
+  const deskLamp = new THREE.PointLight(0xffc88a, 7, 7, 1.7); deskLamp.position.copy(opt('desk', V(-19.5, 1.2, 11.5))).add(V(0, 0.45, 0)); scene.add(deskLamp);
+  // a bare bulb on the temporary supply, hanging over the column by the bay door; it comes on with the generator
+  const bulbAt = V(-34.0, H - 0.95, -7.7);
+  const bulbCord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, H - bulbAt.y, 5), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.7 }));
+  bulbCord.position.set(bulbAt.x, (H + bulbAt.y) / 2, bulbAt.z);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), M.bulbOff || new THREE.MeshStandardMaterial({ color: 0xcfc8b8 }));
+  bulb.position.copy(bulbAt); bulb.userData.dynamic = true; scene.add(bulbCord, bulb);
+  const bulbLight = new THREE.PointLight(0xffc27a, 0, 9, 1.8); bulbLight.position.copy(bulbAt).add(V(0, -0.08, 0)); scene.add(bulbLight);
+  let bulbOn = !!CH.gen;
   const lit = new Set();
   function setZone(zone, on, flicker = false) {
     if (on) lit.add(zone); else lit.delete(zone);
@@ -445,13 +475,18 @@ export async function chapter1(game, opts = {}) {
     busy = false;
   }
   async function generatorReveal() {
-    // the work lights come on across the bay; out on the open floor, under the red light, it is standing with its back to you
+    // the power comes on everywhere at once. Through the bay door, out on the open floor, a bare bulb on the
+    // temporary supply stutters on over the column, and it is standing under it with its back to you.
     hunter.script(true);
-    B.object.visible = true; B.object.position.set(-29.5, 0, -1.5); B.anim.heading = Math.atan2(-29.5 - -46, -1.5 - -14) + Math.PI; // facing away from the bay
+    const RV = V(-34.2, 0, -8.5);
+    B.object.visible = true; B.object.position.copy(RV); B.anim.heading = Math.atan2(RV.x - gen.position.x, RV.z - gen.position.z); // facing away from you
     B.anim.gait.reset({ limbs: ['L', 'R'], home: { L: [0.15, 0], R: [-0.165, -0.075] } });
     B.anim.play('faceWall', { yaw: B.anim.heading });
     sfx.stinger('reveal'); sfx.setTension(0.55);
+    bulbOn = true;
+    player.lookAt(V(RV.x, 1.6, RV.z), 1.4);
     await say(OK, 'That\'s it. I\'m seeing load on the temporary supply.');
+    player.releaseLook();
     await d.wait(1.5);
     // it turns its head all the way round
     B.anim.play('idle', { stare: true });
@@ -568,7 +603,7 @@ export async function chapter1(game, opts = {}) {
 
   // ---------------------------------------------------------------- the script
   async function opening() {
-    player.place(-9.0, -4.0, Math.PI / 2, 0); // facing west, into the build-out
+    if (!(opts.restart && CH.seenLift)) player.place(-9.0, -4.0, Math.PI / 2, 0); // facing west, into the build-out
     ui.setFade(1);
     sfx.setAmbience('construction', 0.9, 3); sfx.setReverb('large');
     if (!opts.restart) {
@@ -620,6 +655,7 @@ export async function chapter1(game, opts = {}) {
   if (game.params.get('cp') === 'still') { ui.setFade(0); applyDebugCamera(game); if (game.params.has('lit')) for (const z of Object.keys(ZONES)) setZone(z, true); }
   else game.run(async () => { await opening(); if (!CH.glimpse && !CH.seenLift) game.run(firstGlimpse); await findLift(); });
 
+  let ambT = 25;
   return {
     look: 'horror', ownFade: true,
     update(dt, t) {
@@ -630,6 +666,20 @@ export async function chapter1(game, opts = {}) {
       gen.userData.update?.(t);
       // lift doors
       if (Math.abs(liftDoors - liftDoorsTarget) > 0.001) { liftDoors += Math.sign(liftDoorsTarget - liftDoors) * Math.min(Math.abs(liftDoorsTarget - liftDoors), dt * 0.6); lift.userData.setDoors?.(liftDoors); Object.assign(liftDoorBox, liftDoors > 0.75 ? { minX: 1e6, maxX: 1e6 } : liftDoorClosed); }
+      // the building is never quiet: settling, dripping, something moving a long way off
+      ambT -= dt;
+      if (ambT <= 0 && !hidden) {
+        ambT = 18 + Math.random() * 26;
+        const a = Math.random() * Math.PI * 2, r = 9 + Math.random() * 7, at = V(player.pos.x + Math.cos(a) * r, 0.5, player.pos.z + Math.sin(a) * r);
+        const far = !B.object.visible || hunter.anim.distToPlayer() > 12;
+        const k = Math.random();
+        if (k < 0.3) sfx.debris(at);
+        else if (k < 0.5) sfx.metalImpact(at, 0.15);
+        else if (k < 0.75 && far) { sfx.creatureClick(at); if (Math.random() < 0.5) setTimeout(() => sfx.creatureClick(at.clone().add(V(1.2, 0, 0.6))), 700); }
+        else if (far) sfx.creatureCrack(at);
+      }
+      // the bare bulb: on with the generator, never steady
+      if (bulbOn) { const f = Math.random() < 0.04 ? 0.15 : 0.85 + Math.sin(t * 13.7) * 0.08 + Math.sin(t * 31.1) * 0.05; bulbLight.intensity = 16 * f; bulb.material = f > 0.5 ? (M.bulbOn || bulb.material) : (M.bulbOff || bulb.material); }
       // emergency light flicker
       redB.intensity = 2.6 * (0.75 + 0.25 * Math.sin(t * 9.1) * Math.sin(t * 2.3)) * (Math.random() < 0.01 ? 0.2 : 1);
       // throttled shadows: lit zones only, a few times a second

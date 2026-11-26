@@ -4,8 +4,9 @@ A first-person horror game in a private biocontainment facility. You work the C-
 
 **Built so far:**
 - **Prologue (Intake):** fully playable.
+- **Chapter One (The Build-Out):** fully playable, about 10 to 15 minutes. B is loose on an unfinished construction floor in the dark, and it hunts you. Find diesel, start the generator, close three zone breakers (it won't walk into the light), find Lind's lift key, then survive until the freight lift arrives. Hide in lockers, crouch to stay quiet, and flash it with the halide lamp when it gets close. Dying sends you back to your last checkpoint.
 - **Creature study:** a room for watching the monster's animations.
-- **Chapters 1 to 5:** in development.
+- **Chapters 2 to 5:** in development.
 
 ## Run it
 
@@ -13,15 +14,16 @@ A first-person horror game in a private biocontainment facility. You work the C-
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
+Then open <http://localhost:8000>. Add `?level=chapter1` to jump straight to Chapter One. It needs a WebGL2 browser with internet access (three.js and the fonts load from CDNs). Headphones are recommended: all sound is synthesized live (`js/audio.js`).
 
 | Input | Action |
 | --- | --- |
 | WASD / arrows | walk |
 | Mouse | look (click to capture; click-drag also works) |
 | Shift | run |
-| C | crouch |
-| E | use / interact |
+| C | crouch (quieter, harder to see) |
+| E | use / interact / hide in a locker |
+| Esc | pause menu and settings (mouse sensitivity, invert Y, field of view, quality, FPS counter) |
 | F | flashlight |
 | Right mouse / Q | flash the halide lamp (once you have it) |
 | Touch | left thumb walks, right thumb looks; on-screen buttons for use, flash, light and crouch |
